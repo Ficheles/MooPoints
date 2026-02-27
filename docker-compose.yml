@@ -1,0 +1,16 @@
+services:
+  prepare-dataset:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cow-classifier:py312-slim
+    container_name: prepare-dataset
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PASTA_ORIGINAL: /app/fotos_anotadas
+      BASE_DIR: /app/dataset
+      K: "5"
+    volumes:
+      - ./fotos_anotadas:/app/fotos_anotadas
+      - ./dataset:/app/dataset
+    command: ["./run.sh"]
