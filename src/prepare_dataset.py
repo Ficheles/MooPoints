@@ -1,5 +1,3 @@
-
-
 import os
 import yaml
 import shutil
@@ -51,7 +49,12 @@ def organizar_arquivos():
                 if 'task' in data and 'data' in data['task'] and 'img' in data['task']['data']:
                     img_path_encoded = data['task']['data']['img']
                     img_path_decoded = urllib.parse.unquote(img_path_encoded)
-                    img_filename = img_path_decoded.replace('\\', '/').split('/')[-1]
+                    img_filename_raw = img_path_decoded.replace('\\', '/').split('/')[-1]
+                    partes_nome = img_filename_raw.split('-', 1)
+                    if len(partes_nome) == 2 and len(partes_nome[0]) == 8:
+                        img_filename = partes_nome[1]
+                    else:
+                        img_filename = img_filename_raw
                     caminho_imagem_origem = os.path.join(subdir_path, img_filename)
                     print(f"  Tentando imagem: {caminho_imagem_origem}", flush=True)
                     if os.path.exists(caminho_imagem_origem):

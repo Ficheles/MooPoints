@@ -13,4 +13,8 @@ services:
     volumes:
       - ./fotos_anotadas:/app/fotos_anotadas
       - ./dataset:/app/dataset
-    command: ["./run.sh"]
+      - models:/app/models
+    command: ["python", "key_point_detection_cow.py"]
+
+volumes:
+  models:

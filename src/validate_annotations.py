@@ -8,7 +8,7 @@ KEYPOINTS_REQ = [
 ]
 
 
-BASE_DIR = Path("fotos_anotadas/dataset")
+BASE_DIR = Path("fotos_anotadas/00_dataset")
 
 def validate_annotations():
     print(f"Validando anotações em: {BASE_DIR}")
@@ -32,16 +32,15 @@ def validate_annotations():
                 data = json.load(f)
             
             # Extrair Metadados
-            task_id = data.get("id") or data.get("task", {}).get("id")
+            file_id = data.get("id") or data.get("task", {}).get("id")
+            task_id = data.get("task", {}).get("inner_id", "N/A")
             
             username = "N/A"
-            email = "N/A"
             
             annotations = data.get("annotations", [])
             if annotations:
                 ann = annotations[0]
                 username = ann.get("created_username", "N/A")
-                email = ann.get("created_email", "N/A")
                 if username == "N/A" and "completed_by" in ann:
                     cb = ann.get("completed_by", {})
                     if isinstance(cb, dict):
@@ -82,7 +81,7 @@ def validate_annotations():
             
             if issues:
                 print(f"[ERRO] {jf.name}:")
-                print(f"  Task ID: {task_id} | Email: {username}")
+                print(f"  Task ID: {task_id} | File ID: {file_id} | Email: {username}")
                 for i in issues:
                     print(f"  - {i}")
                 items_error += 1
