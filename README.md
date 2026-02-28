@@ -108,7 +108,6 @@ O script de conversão:
 
 - lê os labels originais `fold_*/labels/*/*.json`;
 - gera os correspondentes `fold_*/labels/*/*.txt`;
-- mantém os `.json` originais (sem criar `.bak`).
 
 Ele faz automaticamente:
 

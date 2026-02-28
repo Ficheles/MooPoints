@@ -20,4 +20,5 @@ services:
       - ./dataset_samples:/app/dataset_samples
       - ./models:/app/models:ro
       - ./.ultralytics:/app/.ultralytics
-    command: ["python", "key_point_detection_cow.py"]
+      - ./src:/app/src
+    command: ["python", "src/key_point_detection_cow.py"]
