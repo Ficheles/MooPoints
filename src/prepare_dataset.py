@@ -60,10 +60,10 @@ def organizar_arquivos():
                     if os.path.exists(caminho_imagem_origem):
                         nome_base_original = os.path.splitext(img_filename)[0]
                         novo_caminho_img = os.path.join(PASTA_LINKS, img_filename)
-                        novo_caminho_txt = os.path.join(PASTA_LINKS, f"{nome_base_original}.txt")
+                        novo_caminho_json = os.path.join(PASTA_LINKS, f"{nome_base_original}.json")
                         criar_link_simbolico(caminho_imagem_origem, novo_caminho_img)
-                        criar_link_simbolico(caminho_anotacao, novo_caminho_txt)
-                        print(f"Processado: {subdir}/{img_filename} -> {img_filename} / {nome_base_original}.txt (symlink)", flush=True)
+                        criar_link_simbolico(caminho_anotacao, novo_caminho_json)
+                        print(f"Processado: {subdir}/{img_filename} -> {img_filename} / {nome_base_original}.json (symlink)", flush=True)
                         pares_gerados += 1
                     else:
                         print(f"AVISO: Imagem {img_filename} não encontrada em {subdir_path}", flush=True)
@@ -86,10 +86,10 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(files)):
         for i in indices:
             name = files[i]
             src_img = os.path.join(PASTA_LINKS, f"{name}.jpg")
-            src_txt = os.path.join(PASTA_LINKS, f"{name}.txt")
-            if os.path.exists(src_img) and os.path.exists(src_txt):
+            src_json = os.path.join(PASTA_LINKS, f"{name}.json")
+            if os.path.exists(src_img) and os.path.exists(src_json):
                 shutil.copy(src_img, f"{fold_path}/images/{split_name}/")
-                shutil.copy(src_txt, f"{fold_path}/labels/{split_name}/")
+                shutil.copy(src_json, f"{fold_path}/labels/{split_name}/")
     mover_para_estrutura(train_idx, "train")
     mover_para_estrutura(val_idx, "val")
     config = {
