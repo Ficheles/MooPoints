@@ -10,11 +10,14 @@ services:
       PASTA_ORIGINAL: /app/fotos_anotadas
       BASE_DIR: /app/dataset
       K: "5"
+      MODEL_DIR: /app/models
+      DETECTION_MODEL_NAME: yolo11x.pt
+      POSE_MODEL_NAME: yolo11x-pose.pt
+      YOLO_CONFIG_DIR: /app/.ultralytics
     volumes:
       - ./fotos_anotadas:/app/fotos_anotadas
       - ./dataset:/app/dataset
-      - models:/app/models
+      - ./dataset_samples:/app/dataset_samples
+      - ./models:/app/models:ro
+      - ./.ultralytics:/app/.ultralytics
     command: ["python", "key_point_detection_cow.py"]
-
-volumes:
-  models:
