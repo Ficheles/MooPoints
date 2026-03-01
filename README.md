@@ -178,11 +178,11 @@ docker compose run --rm prepare-dataset sh
 Dentro do container, por exemplo:
 
 ```bash
-python prepare_dataset.py
-python validate_annotations.py
-python key_point_detection_cow.py
-python convert_labels_to_yolo_pose.py --dataset-root /app/dataset
-python train_yolo_kfold.py --epochs 50 --continue-from-best
+python src/prepare_dataset.py
+python src/validate_annotations.py
+python src/key_point_detection_cow.py
+python src/convert_labels_to_yolo_pose.py --dataset-root /app/dataset
+python src/train_yolo_kfold.py --epochs 50 --continue-from-best
 ```
 
 ## Dicas rápidas
