@@ -1,6 +1,7 @@
 dataset/
 fotos_anotadas/
 models/
+runs/
 .env
 .venv/
 venv/

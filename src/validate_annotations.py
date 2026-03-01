@@ -28,7 +28,7 @@ def validate_annotations():
 
     for jf in json_files:
         try:
-            with open(jf, 'r') as f:
+            with open(jf, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
             # Extrair Metadados

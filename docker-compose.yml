@@ -1,10 +1,10 @@
 services:
-  prepare-dataset:
+  moo-points:
     build:
       context: .
       dockerfile: Dockerfile
     image: cow-classifier:py312-slim
-    container_name: prepare-dataset
+    container_name: moo-points
     environment:
       PYTHONUNBUFFERED: "1"
       PASTA_ORIGINAL: /app/fotos_anotadas
@@ -21,4 +21,4 @@ services:
       - ./models:/app/models:ro
       - ./.ultralytics:/app/.ultralytics
       - ./src:/app/src
-    command: ["python", "src/key_point_detection_cow.py"]
+    command: ["sh", "/app/src/run.sh"]

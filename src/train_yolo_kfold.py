@@ -9,18 +9,26 @@ from statistics import mean
 from ultralytics import YOLO
 
 
+def is_running_in_docker():
+    return Path("/.dockerenv").exists()
+
+
+def default_path(env_var, docker_path, local_path):
+    return os.getenv(env_var, docker_path if is_running_in_docker() else local_path)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Treinamento YOLO Pose com K-Fold usando dataset já preparado.",
     )
     parser.add_argument(
         "--dataset-root",
-        default=os.getenv("DATASET_ROOT", "/app/dataset"),
+        default=default_path("DATASET_ROOT", "/app/dataset", "dataset"),
         help="Diretório raiz com fold_*/data_fold_*.yaml",
     )
     parser.add_argument(
         "--models-dir",
-        default=os.getenv("MODEL_DIR", "/app/models"),
+        default=default_path("MODEL_DIR", "/app/models", "models"),
         help="Diretório com pesos base de transfer learning",
     )
     parser.add_argument(
@@ -53,7 +61,7 @@ def parse_args():
     )
     parser.add_argument(
         "--project",
-        default=os.getenv("TRAIN_PROJECT", "/app/runs/kfold_pose"),
+        default=default_path("TRAIN_PROJECT", "/app/runs/kfold_pose", "runs/kfold_pose"),
         help="Diretório base para saída dos treinos",
     )
     parser.add_argument(
@@ -249,7 +257,13 @@ def train_kfold(args):
         )
 
     project_dir = Path(args.project)
-    project_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        project_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise OSError(
+            f"Não foi possível criar diretório de saída '{project_dir}'. "
+            "Use --project ./runs/kfold_pose ao executar localmente."
+        ) from error
 
     print("=" * 50)
     print("Treino YOLO Pose com K-Fold")
@@ -273,21 +287,46 @@ def train_kfold(args):
             print(f"Iniciando com modelo base: {model_start_path}")
 
         model = YOLO(str(model_start_path))
-        result = model.train(
-            data=str(data_yaml),
-            task="pose",
-            epochs=args.epochs,
-            imgsz=args.imgsz,
-            batch=args.batch,
-            workers=args.workers,
-            device=args.device,
-            project=str(project_dir),
-            name=run_name,
-            save=True,
-            save_period=args.save_period,
-            patience=args.patience,
-            exist_ok=True,
-        )
+        device_name = str(args.device).strip().lower()
+        amp_enabled = device_name != "mps"
+        if not amp_enabled:
+            print("MPS detectado: desabilitando AMP para maior estabilidade.")
+
+        train_kwargs = {
+            "data": str(data_yaml),
+            "task": "pose",
+            "epochs": args.epochs,
+            "imgsz": args.imgsz,
+            "batch": args.batch,
+            "workers": args.workers,
+            "device": args.device,
+            "project": str(project_dir),
+            "name": run_name,
+            "save": True,
+            "save_period": args.save_period,
+            "patience": args.patience,
+            "exist_ok": True,
+            "amp": amp_enabled,
+        }
+
+        try:
+            result = model.train(**train_kwargs)
+        except RuntimeError as error:
+            error_message = str(error)
+            should_retry_on_cpu = (
+                device_name == "mps"
+                and "view size is not compatible" in error_message
+            )
+            if not should_retry_on_cpu:
+                raise
+
+            print(
+                "Erro conhecido no backend MPS durante backward. "
+                "Reexecutando este fold em CPU automaticamente."
+            )
+            train_kwargs["device"] = "cpu"
+            train_kwargs["amp"] = False
+            result = model.train(**train_kwargs)
 
         box_map50 = read_first_metric(result, ["metrics/mAP50(B)"])
         box_map5095 = read_first_metric(result, ["metrics/mAP50-95(B)"])

@@ -185,6 +185,78 @@ python src/convert_labels_to_yolo_pose.py --dataset-root /app/dataset
 python src/train_yolo_kfold.py --epochs 50 --continue-from-best
 ```
 
+## Treino com GPU (Docker)
+
+Para treinar usando GPU NVIDIA no container, execute:
+
+```bash
+docker compose run --rm --gpus all prepare-dataset \
+	python /app/src/train_yolo_kfold.py --epochs 1 --device 0
+```
+
+### Pré-requisitos
+
+- Host Linux com driver NVIDIA instalado
+- `nvidia-container-toolkit` configurado no Docker
+
+### Observação para macOS
+
+No macOS (Docker Desktop), CUDA/NVIDIA não é exposto para o container.
+Nesse caso, rode em CPU:
+
+```bash
+docker compose run --rm prepare-dataset \
+	python /app/src/train_yolo_kfold.py --epochs 1 --device cpu
+```
+
+### Dica para evitar erro 137 (OOM)
+
+Se houver falta de memória, reduza o consumo:
+
+```bash
+docker compose run --rm --gpus all prepare-dataset \
+	python /app/src/train_yolo_kfold.py --epochs 1 --device 0 --batch 2 --workers 0 --imgsz 512
+```
+
+## Treino no Mac mini M4 (Apple Silicon / MPS)
+
+No Mac mini M4, o treino acelerado deve ser feito nativamente no macOS com `MPS` (Metal), e não com CUDA no Docker.
+
+### 1) Criar e ativar ambiente virtual
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+Se `python3.12` não existir:
+
+```bash
+brew install python@3.12
+```
+
+### 2) Confirmar que o MPS está disponível
+
+```bash
+python -c "import torch; print(torch.backends.mps.is_available())"
+```
+
+Esperado: `True`
+
+### 3) Treinar YOLO com 1 epoch no M4
+
+```bash
+python src/train_yolo_kfold.py --epochs 1 --device mps
+```
+
+### 4) Ajuste para memória (se ocorrer OOM)
+
+```bash
+python src/train_yolo_kfold.py --epochs 1 --device mps --batch 2 --workers 0 --imgsz 512
+```
+
 ## Dicas rápidas
 
 - Se aparecer aviso do Ultralytics sobre config, o projeto já usa `YOLO_CONFIG_DIR` no compose.
