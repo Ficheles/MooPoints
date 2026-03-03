@@ -3,7 +3,7 @@ import yaml
 import shutil
 import json
 import urllib.parse
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, train_test_split
 
 PASTA_ORIGINAL = "fotos_anotadas"
 BASE_DIR = "dataset"
@@ -11,6 +11,7 @@ DATASET_DIR = f"00_{BASE_DIR}"
 PASTA_LINKS = os.path.join(PASTA_ORIGINAL, DATASET_DIR)
 
 K = 5
+TEST_SIZE = 0.1
 
 
 def criar_link_simbolico(origem, destino):
@@ -79,9 +80,22 @@ files = sorted(files)
 kf = KFold(n_splits=K, shuffle=True, random_state=42)
 for fold, (train_idx, val_idx) in enumerate(kf.split(files)):
     fold_path = os.path.join(BASE_DIR, f"fold_{fold}")
-    for split in ["train", "val"]:
+    if os.path.exists(fold_path):
+        shutil.rmtree(fold_path)
+    for split in ["train", "val", "test"]:
         os.makedirs(os.path.join(fold_path, "images", split), exist_ok=True)
         os.makedirs(os.path.join(fold_path, "labels", split), exist_ok=True)
+
+    train_idx_list = list(train_idx)
+    test_idx = []
+    if len(train_idx_list) > 1 and TEST_SIZE > 0:
+        train_idx_list, test_idx = train_test_split(
+            train_idx_list,
+            test_size=TEST_SIZE,
+            random_state=42,
+            shuffle=True,
+        )
+
     def mover_para_estrutura(indices, split_name):
         for i in indices:
             name = files[i]
@@ -90,15 +104,19 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(files)):
             if os.path.exists(src_img) and os.path.exists(src_json):
                 shutil.copy(src_img, f"{fold_path}/images/{split_name}/")
                 shutil.copy(src_json, f"{fold_path}/labels/{split_name}/")
-    mover_para_estrutura(train_idx, "train")
+
+    mover_para_estrutura(train_idx_list, "train")
     mover_para_estrutura(val_idx, "val")
+    mover_para_estrutura(test_idx, "test")
+
     config = {
         'path': os.path.abspath(fold_path),
         'train': 'images/train',
         'val': 'images/val',
+        'test': 'images/test',
         'kpt_shape': [8, 3],
         'names': {0: 'cow'}
     }
     with open(os.path.join(fold_path, f"data_fold_{fold}.yaml"), 'w') as f:
         yaml.dump(config, f)
-print(f"Estrutura criada em /{BASE_DIR} com {K} folds.")
+print(f"Estrutura criada em /{BASE_DIR} com {K} folds e {TEST_SIZE * 100:.0f}% de teste por fold.")
