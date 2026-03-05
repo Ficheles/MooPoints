@@ -87,16 +87,16 @@ Esse script:
 
 - Carrega uma imagem de entrada (`/app/dataset_samples/person.png`).
 - Usa dois modelos:
-  - detecção (`yolo11x.pt`)
-  - pose (`yolo11x-pose.pt`)
+  - detecção (`yolo26n.pt`)
+  - pose (`yolo26n-pose.pt`)
 - Desenha caixa e esqueleto dos keypoints.
 - Salva a saída em `/app/dataset_samples/person-pose_with_skeleton.png`.
 
 Os nomes dos modelos são configuráveis por variáveis de ambiente:
 
 - `MODEL_DIR` (padrão `/app/models`)
-- `DETECTION_MODEL_NAME` (padrão `yolo11x.pt`)
-- `POSE_MODEL_NAME` (padrão `yolo11x-pose.pt`)
+- `DETECTION_MODEL_NAME` (padrão `yolo26n.pt`)
+- `POSE_MODEL_NAME` (padrão `yolo26n-pose.pt`)
 
 ## Sobre o script `train_yolo_kfold.py`
 
@@ -120,7 +120,7 @@ Ele faz automaticamente:
 Principais variáveis/opções:
 
 - `MODEL_DIR` (padrão `/app/models`)
-- `TRAIN_MODEL_NAME` (padrão `yolo11x-pose.pt`)
+- `TRAIN_MODEL_NAME` (padrão `yolo26n-pose.pt`)
 - `DATASET_ROOT` (padrão `/app/dataset`)
 - `CONTINUE_FROM_BEST=true` para retomar do `best.pt`
 
@@ -158,8 +158,8 @@ f1_macro_aceitas: ...
 
 Coloque os arquivos de modelo em `./models`:
 
-- `./models/yolo11x.pt`
-- `./models/yolo11x-pose.pt`
+- `./models/yolo26n.pt`
+- `./models/yolo26n-pose.pt`
 
 > O diretório `models` é montado como bind mount em `/app/models` e usado apenas em runtime.
 
