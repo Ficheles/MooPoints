@@ -18,7 +18,7 @@ services:
       - ./fotos_anotadas:/app/fotos_anotadas
       - ./dataset:/app/dataset
       - ./dataset_samples:/app/dataset_samples
-      - ./models:/app/models:ro
+      - ./models:/app/models
       - ./.ultralytics:/app/.ultralytics
       - ./src:/app/src
-    command: ["python", "src/key_point_detection_cow.py"]
+    command: ["tail", "-f", "/dev/null"]
