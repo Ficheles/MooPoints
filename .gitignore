@@ -1,5 +1,7 @@
-dataset/
+dataset_keypoint/
+dataset_classification/
 fotos_anotadas/
+fotos_classificar/
 models/
 .env
 .venv/

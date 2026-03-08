@@ -2,26 +2,36 @@
 
 Projeto para preparação de dataset de bovinos, validação de anotações e teste de detecção/pose com YOLO.
 
-Também inclui uma API FastAPI para cadastro, identificação, remoção e listagem de vacas em base SQLite.
+Também inclui uma API FastAPI para:
+
+- cadastro/listagem de vacas em base SQLite (fluxo de similaridade), e
+- classificação por 30 classes com XGBoost (fluxo principal de produção).
 
 ## Visão geral
 
-Este repositório possui três fluxos principais:
+Este repositório possui fluxos principais:
 
 1. **Preparar dataset** com links simbólicos e criação de folds.
 2. **Validar anotações** para checar bbox e keypoints obrigatórios.
 3. **Rodar inferência de pose** com o script `key_point_detection_cow.py`.
 4. **Converter labels para YOLO Pose** com o script `convert_labels_to_yolo_pose.py`.
 5. **Treinar com K-Fold + transfer learning** com o script `train_yolo_kfold.py`.
-6. **Executar API FastAPI** para cadastro/identificação em SQLite.
+6. **Executar API FastAPI** para cadastro/identificação em SQLite e classificação via XGBoost.
+7. **Classificação por 30 classes com features geométricas** (YOLO pose → features → XGBoost).
 
 ## Estrutura principal
 
-- `src/prepare_dataset.py`: organiza arquivos, cria links em `fotos_anotadas/00_dataset` e gera folds em `dataset/` mantendo labels originais em `.json`.
-- `src/validate_annotations.py`: valida as anotações no diretório preparado.
-- `src/key_point_detection_cow.py`: executa detecção + pose usando modelos YOLO.
-- `src/convert_labels_to_yolo_pose.py`: lê labels `.json` (Label Studio) e gera labels `.txt` no formato YOLO Pose.
-- `src/train_yolo_kfold.py`: treina YOLO Pose usando os folds já prontos em `dataset/`.
+- `src/keypoints/prepare_dataset.py`: organiza arquivos, cria links em `fotos_anotadas/00_dataset` e gera folds em `dataset/` mantendo labels originais em `.json`.
+- `src/keypoints/validate_annotations.py`: valida as anotações no diretório preparado.
+- `src/keypoints/key_point_detection_cow.py`: executa detecção + pose usando modelos YOLO.
+- `src/keypoints/convert_labels_to_yolo_pose.py`: lê labels `.json` (Label Studio) e gera labels `.txt` no formato YOLO Pose.
+- `src/keypoints/train_yolo_kfold.py`: treina YOLO Pose usando os folds já prontos em `dataset/`.
+- `src/classification/prepare_classification_dataset.py`: organiza `fotos_classificar` em `dataset_classification` com teste estratificado (10%) e 5 folds train/val sem vazamento por `session_id`.
+- `src/classification/generate_geometric_features_from_dataset.py`: usa modelo YOLO pose para gerar automaticamente keypoints/features geométricas a partir de `dataset_classification`.
+- `src/classification/train_xgboost_classifier.py`: treina classificador XGBoost com as features, salva artefatos e limiar de desconhecida.
+- `src/classification/train_image_classifier_kfold.py`: treina classificador por imagem em `dataset_classification/fold_*`.
+- `src/classification/evaluate_image_classifier.py`: avalia checkpoint treinado no conjunto `dataset_classification/test`.
+- `src/classification/inference_image_classifier.py`: classifica uma imagem em uma das classes treinadas.
 - `docker-compose.yml`: execução do projeto em container.
 
 ## Como usar localmente (Python)
@@ -40,31 +50,31 @@ pip install -r requirements.txt
 ### 1) Preparar dataset
 
 ```bash
-python src/prepare_dataset.py
+python src/keypoints/prepare_dataset.py
 ```
 
 ### 2) Validar anotações
 
 ```bash
-python src/validate_annotations.py
+python src/keypoints/validate_annotations.py
 ```
 
 ### 3) Executar inferência de pose
 
 ```bash
-python src/key_point_detection_cow.py
+python src/keypoints/key_point_detection_cow.py
 ```
 
 ### 4) Converter labels para YOLO Pose (obrigatório antes do treino)
 
 ```bash
-python src/convert_labels_to_yolo_pose.py --dataset-root /app/dataset
+python src/keypoints/convert_labels_to_yolo_pose.py --dataset-root /app/dataset
 ```
 
 ### 5) Treinar com K-Fold (transfer learning)
 
 ```bash
-python src/train_yolo_kfold.py \
+python src/keypoints/train_yolo_kfold.py \
 	--dataset-root /app/dataset \
 	--models-dir /app/models \
 	--base-model yolo11x-pose.pt \
@@ -77,7 +87,7 @@ python src/train_yolo_kfold.py \
 Para continuar o treino depois usando o melhor checkpoint salvo de cada fold:
 
 ```bash
-python src/train_yolo_kfold.py --continue-from-best
+python src/keypoints/train_yolo_kfold.py --continue-from-best
 ```
 
 O relatório consolidado é salvo em:
@@ -95,21 +105,210 @@ uvicorn src.api:app --host 0.0.0.0 --port 8000 --reload
 Endpoints principais:
 
 - `POST /cows/register`
-	- Entrada: `multipart/form-data` com campo `image`
-	- Ação: detecta keypoints da vaca, extrai features geométricas e salva no SQLite (`data/cows.db`)
+  - Entrada: `multipart/form-data` com campo `image`
+  - Ação: detecta keypoints da vaca, extrai features geométricas e salva no SQLite (`data/cows.db`)
 - `POST /cows/identify`
+  - Entrada: `multipart/form-data` com campo `image`
+  - Query opcional: `similarity_threshold` (padrão: `0.98`)
+  - Ação: compara features da imagem enviada com a base SQLite e informa se foi reconhecida
+- `POST /cows/classify`
 	- Entrada: `multipart/form-data` com campo `image`
-	- Query opcional: `similarity_threshold` (padrão: `0.98`)
-	- Ação: compara features da imagem enviada com a base SQLite e informa se foi reconhecida
+	- Query opcional: `confidence_threshold` (se ausente, usa limiar salvo no treino XGBoost)
+	- Ação: extrai keypoints com YOLO pose, gera features geométricas e classifica com XGBoost
+	- Retorno esperado:
+		- `recognized=true` + `predicted_class` quando pertence a uma das classes treinadas
+		- `recognized=false` quando não pertence (abaixo do limiar)
+		- `reason` com motivo técnico (`recognized`, `below_confidence_threshold`, `no_keypoints_detected`, `partial_keypoints_detected`)
 - `DELETE /cows/{cow_id}`
-	- Ação: remove cadastro da vaca e sua imagem
+  - Ação: remove cadastro da vaca e sua imagem
 - `GET /cows`
-	- Ação: lista vacas cadastradas com `id` e imagem de cadastro (`image_url`)
-	- Query opcional: `include_base64=true` para retornar também a imagem em base64
+  - Ação: lista vacas cadastradas com `id` e imagem de cadastro (`image_url`)
+  - Query opcional: `include_base64=true` para retornar também a imagem em base64
 
 Endpoint auxiliar para visualizar a imagem de cadastro:
 
 - `GET /cows/{cow_id}/image`
+
+### 6.1) Interface Web (Streamlit)
+
+Com a API em execução, suba a interface web:
+
+```bash
+streamlit run src/ui/streamlit_app.py
+```
+
+Fluxo da interface:
+
+- usuário envia uma foto da vaca;
+- a UI chama `POST /cows/classify` com limiar configurável;
+- retorno exibido como:
+	- **Reconhecida**: mostra `predicted_class`;
+	- **Desconhecida**: quando `recognized=false`;
+	- mensagem amigável baseada em `reason`.
+
+Recursos de UX da tela:
+
+- pré-visualização da imagem enviada;
+- status visual de processamento;
+- cartão de resultado com confiança e limiar usado;
+- teste rápido de conexão com a API pelo endpoint `GET /cows`.
+
+### 7) Classificação por 30 classes (fluxo fim a fim recomendado)
+
+Este é o fluxo principal para produção: **YOLO pose → features geométricas → XGBoost → API/Streamlit**.
+
+#### Estrutura esperada de entrada (`fotos_classificar`)
+
+Formato recomendado (uma pasta por vaca/classe):
+
+```text
+fotos_classificar/
+├── cow_01/
+│   ├── 20260101_040807_baia16_IPC1_001.jpg
+│   └── ...
+├── cow_02/
+│   └── ...
+...
+└── cow_30/
+		└── ...
+```
+
+#### 7.1 Gerar `dataset_classification` com split sem vazamento por sessão
+
+```bash
+python src/classification/prepare_classification_dataset.py \
+	--input-root fotos_classificar \
+	--output-root dataset_classification \
+	--test-size 0.10 \
+	--n-splits 5 \
+	--clean-output
+```
+
+Resultado:
+
+```text
+dataset_classification/
+├── classes.csv
+├── splits_manifest.csv
+├── test/
+│   ├── cow_01/*.jpg
+│   ├── ...
+│   └── cow_30/*.jpg
+├── fold_0/
+│   ├── train/cow_01/*.jpg ... cow_30/*.jpg
+│   └── val/cow_01/*.jpg ... cow_30/*.jpg
+...
+└── fold_4/
+		├── train/cow_01/*.jpg ... cow_30/*.jpg
+		└── val/cow_01/*.jpg ... cow_30/*.jpg
+```
+
+Observações:
+
+- O teste usa 10% estratificado por classe e sem misturar `session_id` com os folds de desenvolvimento.
+- Os 90% restantes são divididos em 5 folds (`train`/`val`) também sem vazamento por `session_id`.
+
+#### 7.2 Gerar features geométricas automaticamente com o modelo de pose
+
+Use o `best.pt` de pose já treinado para anotar implicitamente as imagens (inferência de keypoints) e gerar o CSV de features:
+
+```bash
+python src/classification/generate_geometric_features_from_dataset.py \
+	--dataset-root dataset_classification \
+	--fold 0 \
+	--model-path models/yolo11x-pose.pt \
+	--output-csv dataset_classification/geometric_features.csv
+```
+
+Saída:
+
+- `dataset_classification/geometric_features.csv`
+
+#### 7.3 Treinar XGBoost com as features
+
+```bash
+python src/classification/train_xgboost_classifier.py \
+	--features-csv dataset_classification/geometric_features.csv \
+	--models-dir models
+```
+
+Artefatos gerados em `models/`:
+
+- `xgboost_cow_id.pkl`
+- `xgb_label_encoder.pkl`
+- `xgb_imputer.pkl`
+- `xgb_feature_columns.json`
+- `xgb_unknown_threshold.json`
+- `xgb_training_report.json`
+
+#### 7.4 Subir API e validar classificação
+
+```bash
+uvicorn src.api:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Teste rápido do endpoint de classificação:
+
+```bash
+curl -X POST "http://localhost:8000/cows/classify" \
+	-F "image=@/caminho/para/imagem.jpg"
+```
+
+#### 7.5 Usar Streamlit no fluxo final
+
+```bash
+streamlit run src/ui/streamlit_app.py
+```
+
+Comportamento esperado:
+
+- mostra classe prevista quando `recognized=true`;
+- mostra desconhecida quando `recognized=false`;
+- exibe mensagem amigável baseada em `reason`.
+
+---
+
+### Fluxo alternativo (legado): classificação por imagem direta
+
+Os scripts abaixo continuam disponíveis para o fluxo de classificador de imagem (sem features geométricas):
+
+- `src/classification/train_image_classifier_kfold.py`
+- `src/classification/evaluate_image_classifier.py`
+- `src/classification/inference_image_classifier.py`
+
+#### Treinar classificador K-Fold (legado)
+
+```bash
+python src/classification/train_image_classifier_kfold.py \
+	--dataset-root dataset_classification \
+	--models-dir models \
+	--base-model yolo11n-cls.pt \
+	--epochs 50 \
+	--batch 16 \
+	--imgsz 640 \
+	--device cpu
+```
+
+Relatório consolidado:
+
+- `runs/kfold_classification/kfold_classification_report.json`
+
+#### Inferência de uma imagem
+
+```bash
+python src/classification/inference_image_classifier.py \
+	/caminho/para/imagem.jpg \
+	--model-path runs/kfold_classification/cls_fold_0/weights/best.pt
+```
+
+#### Avaliar no teste estratificado (10%)
+
+```bash
+python src/classification/evaluate_image_classifier.py \
+	--test-root dataset_classification/test \
+	--model-path runs/kfold_classification/cls_fold_0/weights/best.pt \
+	--output-json runs/kfold_classification/test_metrics_fold0.json
+```
 
 ## Sobre o script `key_point_detection_cow.py`
 
@@ -208,11 +407,11 @@ docker compose run --rm prepare-dataset sh
 Dentro do container, por exemplo:
 
 ```bash
-python src/prepare_dataset.py
-python src/validate_annotations.py
-python src/key_point_detection_cow.py
-python src/convert_labels_to_yolo_pose.py --dataset-root /app/dataset
-python src/train_yolo_kfold.py --epochs 50 --continue-from-best
+python src/keypoints/prepare_dataset.py
+python src/keypoints/validate_annotations.py
+python src/keypoints/key_point_detection_cow.py
+python src/keypoints/convert_labels_to_yolo_pose.py --dataset-root /app/dataset
+python src/keypoints/train_yolo_kfold.py --epochs 50 --continue-from-best
 ```
 
 ## Dicas rápidas

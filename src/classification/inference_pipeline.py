@@ -24,16 +24,31 @@ from ultralytics import YOLO
 # --- Constantes e Mapeamentos ---
 # (Reutilizados de extract_geometric_features.py para consistência)
 KEYPOINT_MAP = {
-    0: 'Head', 1: 'Neck', 2: 'Withers', 3: 'Back', 4: 'Hook',
-    5: 'Hip_ridge', 6: 'Tail_head', 7: 'Pin'
+    0: "withers",
+    1: "back",
+    2: "hook up",
+    3: "hook down",
+    4: "hip",
+    5: "tail head",
+    6: "pin up",
+    7: "pin down",
 }
 DISTANCE_PAIRS = [
-    ('Head', 'Neck'), ('Neck', 'Withers'), ('Withers', 'Back'), ('Back', 'Hook'),
-    ('Hook', 'Hip_ridge'), ('Hip_ridge', 'Tail_head'), ('Tail_head', 'Pin')
+    ("withers", "back"),
+    ("back", "hook up"),
+    ("hook up", "hook down"),
+    ("hook down", "hip"),
+    ("hip", "tail head"),
+    ("tail head", "pin up"),
+    ("pin up", "pin down"),
 ]
 ANGLE_TRIPLETS = [
-    ('Head', 'Neck', 'Withers'), ('Neck', 'Withers', 'Back'), ('Withers', 'Back', 'Hook'),
-    ('Back', 'Hook', 'Hip_ridge'), ('Hook', 'Hip_ridge', 'Tail_head'), ('Hip_ridge', 'Tail_head', 'Pin')
+    ("withers", "back", "hook up"),
+    ("back", "hook up", "hook down"),
+    ("hook up", "hook down", "hip"),
+    ("hook down", "hip", "tail head"),
+    ("hip", "tail head", "pin up"),
+    ("tail head", "pin up", "pin down"),
 ]
 
 # --- Funções de Cálculo ---

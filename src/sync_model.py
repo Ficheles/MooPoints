@@ -1,66 +1,64 @@
-"""
-Módulo para Download de Modelos do Google Drive.
-
-Este script utiliza a biblioteca 'gdown' para baixar um arquivo a partir de
-um ID de compartilhamento do Google Drive, facilitando a sincronização de
-modelos treinados em ambientes externos (como o Google Colab) com o projeto local.
-
-Autor: GitHub Copilot
-Data: 2026-03-05
-"""
 import argparse
 import gdown
 from pathlib import Path
 
-def download_model_from_gdrive(file_id: str, output_path: str):
+def sync_folder_from_gdrive(folder_id: str, output_parent_dir: str):
     """
-    Baixa um arquivo do Google Drive usando seu ID de compartilhamento.
+    Baixa uma pasta do Google Drive para um diretório local.
 
     Args:
-        file_id (str): O ID do arquivo no Google Drive.
-        output_path (str): O caminho local onde o arquivo será salvo.
+        folder_id (str): O ID da pasta no Google Drive.
+        output_parent_dir (str): O diretório local onde a pasta do Drive será salva.
     """
-    output_path = Path(output_path)
-    # Garante que o diretório de destino exista
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path = Path(output_parent_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
     
-    print(f"Iniciando download do Google Drive (ID: {file_id})...")
-    print(f"Salvando em: {output_path}")
+    print(f"Iniciando sincronização da pasta do Google Drive (ID: {folder_id})...")
+    print(f"A pasta do Drive será salva dentro de: {output_path.resolve()}")
     
     try:
-        # Tenta baixar usando o ID do arquivo
-        gdown.download(id=file_id, output=str(output_path), quiet=False, fuzzy=True)
+        # Baixa a pasta. 'remaining_ok=True' pula arquivos que já existem,
+        # agindo como uma sincronização. Se a pasta de destino já existir,
+        # o conteúdo será mesclado/atualizado.
+        gdown.download_folder(
+            id=folder_id,
+            output=str(output_path),
+            quiet=False,
+            remaining_ok=True,
+            use_cookies=False
+        )
         
-        if output_path.exists():
-            print(f"\nModelo salvo com sucesso em: {output_path}")
-        else:
-            print("\nERRO: O download parece ter falhado, pois o arquivo não foi criado.")
-            print("Verifique o ID do arquivo e as permissões de compartilhamento.")
+        print(f"\nDiretório sincronizado com sucesso!")
 
     except Exception as e:
-        print(f"\nOcorreu um erro durante o download: {e}")
-        print("DICA: Certifique-se de que o arquivo no Google Drive está com o 'Acesso geral' definido como 'Qualquer pessoa com o link'.")
+        print(f"\nOcorreu um erro durante a sincronização: {e}")
+        print("DICA: Certifique-se de que a pasta no Google Drive e todos os seus arquivos estão com o 'Acesso geral' definido como 'Qualquer pessoa com o link'.")
+
 
 def main():
     """Função principal para parsear argumentos e iniciar o download."""
     parser = argparse.ArgumentParser(
-        description="Script para baixar modelos do Google Drive.",
+        description="Script para sincronizar um diretório inteiro do Google Drive.",
         formatter_class=argparse.RawTextHelpFormatter
     )
     parser.add_argument(
-        "file_id",
-        help="O ID do arquivo no Google Drive.\n"
-             "Você pode extrair o ID do link de compartilhamento. Exemplo:\n"
-             "No link 'https://drive.google.com/file/d/1aBcDeFgHiJkLmNoPqRsTuVwXyZ/view?usp=sharing',\n"
-             "O ID é '1aBcDeFgHiJkLmNoPqRsTuVwXyZ'."
+        "folder_id",
+        help="O ID da PASTA no Google Drive.\n"
+             "Você pode extrair o ID do link de compartilhamento da pasta. Exemplo:\n"
+             "No link 'https://drive.google.com/drive/folders/1AeP65jbcZzdakLDhyYDAVgyR5NMnS9wp?usp=sharing',\n"
+             "O ID é '1AeP65jbcZzdakLDhyYDAVgyR5NMnS9wp'."
     )
     parser.add_argument(
-        "output_path",
-        help="Caminho completo onde o modelo será salvo (ex: models/yolo11x-pose.pt)."
+        "output_parent_dir",
+        nargs='?',
+        default='.',
+        help="Diretório PAI onde a pasta do Drive será salva. \n"
+             "Se a pasta no Drive se chama 'models' e este argumento for '.', a pasta será salva em './models'.\n"
+             "(Padrão: diretório atual './')"
     )
     args = parser.parse_args()
-
-    download_model_from_gdrive(args.file_id, args.output_path)
+    
+    sync_folder_from_gdrive(args.folder_id, args.output_parent_dir)
 
 if __name__ == "__main__":
     main()

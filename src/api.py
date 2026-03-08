@@ -19,13 +19,14 @@ from datetime import datetime
 from pathlib import Path
 
 import cv2
+import joblib
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from ultralytics import YOLO
 
-from inference_pipeline import (
+from src.classification.inference_pipeline import (
     ANGLE_TRIPLETS,
     DISTANCE_PAIRS,
     KEYPOINT_MAP,
@@ -38,6 +39,11 @@ PROJECT_ROOT = Path(__file__).parent.parent
 MODEL_PATH = PROJECT_ROOT / "models" / "yolo11x-pose.pt"
 DB_PATH = PROJECT_ROOT / "data" / "cows.db"
 IMAGES_DIR = PROJECT_ROOT / "data" / "registered_cows"
+XGB_MODEL_PATH = PROJECT_ROOT / "models" / "xgboost_cow_id.pkl"
+XGB_ENCODER_PATH = PROJECT_ROOT / "models" / "xgb_label_encoder.pkl"
+XGB_IMPUTER_PATH = PROJECT_ROOT / "models" / "xgb_imputer.pkl"
+XGB_FEATURES_PATH = PROJECT_ROOT / "models" / "xgb_feature_columns.json"
+XGB_THRESHOLD_PATH = PROJECT_ROOT / "models" / "xgb_unknown_threshold.json"
 
 
 def _now_iso() -> str:
@@ -45,8 +51,17 @@ def _now_iso() -> str:
 
 
 def _ensure_dirs() -> None:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    global DB_PATH, IMAGES_DIR
+
+    try:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        fallback_root = PROJECT_ROOT / ".runtime_data"
+        DB_PATH = fallback_root / "cows.db"
+        IMAGES_DIR = fallback_root / "registered_cows"
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -93,6 +108,11 @@ def _vector_from_features(features: dict[str, float]) -> np.ndarray:
     return np.array(values, dtype=float)
 
 
+def _xgb_vector_from_features(features: dict[str, float], feature_columns: list[str]) -> np.ndarray:
+    values = [float(features[col]) for col in feature_columns]
+    return np.array(values, dtype=float)
+
+
 def _cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
     n1 = np.linalg.norm(v1)
     n2 = np.linalg.norm(v2)
@@ -113,21 +133,58 @@ class CowFeatureExtractor:
         if not model_path.exists():
             raise FileNotFoundError(f"Modelo YOLO não encontrado: {model_path}")
         self.model = YOLO(str(model_path))
+        self._conf_schedule = (0.25, 0.15, 0.08, 0.05)
+        self._imgsz_schedule = (640, 960, 1280)
+
+    def _extract_keypoints_with_retries(self, image_bgr: np.ndarray) -> np.ndarray:
+        best_partial_count = 0
+
+        for imgsz in self._imgsz_schedule:
+            for conf in self._conf_schedule:
+                results = self.model.predict(
+                    source=image_bgr,
+                    task="pose",
+                    conf=conf,
+                    imgsz=imgsz,
+                    verbose=False,
+                )
+                if not results:
+                    continue
+
+                keypoints_obj = getattr(results[0], "keypoints", None)
+                if keypoints_obj is None or keypoints_obj.xy is None:
+                    continue
+
+                keypoints_batch = keypoints_obj.xy.cpu().numpy()
+                if len(keypoints_batch) == 0:
+                    continue
+
+                keypoints = keypoints_batch[0]
+                if keypoints.shape[0] >= 8:
+                    return keypoints
+
+                best_partial_count = max(best_partial_count, int(keypoints.shape[0]))
+
+        if best_partial_count > 0:
+            raise ValueError(
+                f"Detecção parcial: encontrados {best_partial_count} pontos-chave, mas são necessários 8."
+            )
+
+        raise ValueError("Nenhuma vaca ou ponto-chave detectado na imagem.")
 
     def extract_from_image_array(self, image_bgr: np.ndarray) -> tuple[np.ndarray, dict[str, float]]:
-        results = self.model(image_bgr, verbose=False)
-        if not results:
-            raise ValueError("Nenhum resultado retornado pelo modelo YOLO.")
+        keypoints = self._extract_keypoints_with_retries(image_bgr)
+        required_kpts = len(KEYPOINT_MAP)
 
-        keypoints_batch = results[0].keypoints.xy.cpu().numpy()
-        if len(keypoints_batch) == 0:
-            raise ValueError("Nenhuma vaca ou ponto-chave detectado na imagem.")
+        if keypoints.shape[0] < required_kpts:
+            raise ValueError(
+                f"Detecção parcial: encontrados {int(keypoints.shape[0])} pontos-chave, mas são necessários {required_kpts}."
+            )
 
-        keypoints = keypoints_batch[0]
-        if keypoints.shape[0] < 8:
-            raise ValueError(f"Esperava 8 pontos-chave, mas recebeu {keypoints.shape[0]}.")
+        if keypoints.shape[0] > required_kpts:
+            keypoints = keypoints[:required_kpts]
 
-        keypoint_map = {KEYPOINT_MAP[i]: coord for i, coord in enumerate(keypoints)}
+        keypoint_map = {KEYPOINT_MAP[i]: keypoints[i] for i in range(required_kpts)}
 
         features: dict[str, float] = {}
         for p1, p2 in DISTANCE_PAIRS:
@@ -150,10 +207,50 @@ class IdentifyResponse(BaseModel):
     matched_id: int | None
     similarity: float | None
     threshold: float
+    reason: str | None = None
+
+
+class ClassifyResponse(BaseModel):
+    recognized: bool
+    predicted_class: str | None
+    confidence: float | None
+    threshold: float
+    reason: str | None = None
 
 
 app = FastAPI(title="Cow Classifier API", version="1.0.0")
 extractor: CowFeatureExtractor | None = None
+xgb_model = None
+xgb_encoder = None
+xgb_imputer = None
+xgb_feature_columns: list[str] | None = None
+xgb_unknown_threshold: float = 0.55
+
+
+def _load_xgb_artifacts() -> None:
+    global xgb_model, xgb_encoder, xgb_imputer, xgb_feature_columns, xgb_unknown_threshold
+
+    required = [XGB_MODEL_PATH, XGB_ENCODER_PATH, XGB_IMPUTER_PATH, XGB_FEATURES_PATH]
+    if not all(path.exists() for path in required):
+        xgb_model = None
+        xgb_encoder = None
+        xgb_imputer = None
+        xgb_feature_columns = None
+        xgb_unknown_threshold = 0.55
+        return
+
+    xgb_model = joblib.load(XGB_MODEL_PATH)
+    xgb_encoder = joblib.load(XGB_ENCODER_PATH)
+    xgb_imputer = joblib.load(XGB_IMPUTER_PATH)
+
+    payload = json.loads(XGB_FEATURES_PATH.read_text(encoding="utf-8"))
+    xgb_feature_columns = list(payload.get("feature_columns", []))
+
+    if XGB_THRESHOLD_PATH.exists():
+        threshold_payload = json.loads(XGB_THRESHOLD_PATH.read_text(encoding="utf-8"))
+        xgb_unknown_threshold = float(threshold_payload.get("unknown_threshold", 0.55))
+    else:
+        xgb_unknown_threshold = 0.55
 
 
 @app.on_event("startup")
@@ -161,6 +258,7 @@ def startup() -> None:
     global extractor
     _init_db()
     extractor = CowFeatureExtractor(MODEL_PATH)
+    _load_xgb_artifacts()
 
 
 def _validate_image(upload: UploadFile, raw_bytes: bytes) -> tuple[np.ndarray, str]:
@@ -241,7 +339,16 @@ async def identify_cow(
     try:
         _, query_features = extractor.extract_from_image_array(image_bgr)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        reason = "no_keypoints_detected"
+        if "Detecção parcial" in str(exc):
+            reason = "partial_keypoints_detected"
+        return IdentifyResponse(
+            recognized=False,
+            matched_id=None,
+            similarity=None,
+            threshold=similarity_threshold,
+            reason=reason,
+        )
 
     query_vector = _vector_from_features(query_features)
 
@@ -257,6 +364,7 @@ async def identify_cow(
             matched_id=None,
             similarity=None,
             threshold=similarity_threshold,
+            reason="empty_database",
         )
 
     best_id: int | None = None
@@ -271,12 +379,64 @@ async def identify_cow(
             best_id = int(row["id"])
 
     recognized = best_similarity >= similarity_threshold
+    reason = "recognized" if recognized else "below_similarity_threshold"
 
     return IdentifyResponse(
         recognized=recognized,
         matched_id=best_id if recognized else None,
         similarity=round(float(best_similarity), 6),
         threshold=similarity_threshold,
+        reason=reason,
+    )
+
+
+@app.post("/cows/classify", response_model=ClassifyResponse)
+async def classify_cow(
+    image: UploadFile = File(...),
+    confidence_threshold: float | None = Query(default=None, ge=0.0, le=1.0),
+) -> ClassifyResponse:
+    if extractor is None:
+        raise HTTPException(status_code=500, detail="Extrator de features não inicializado.")
+
+    if xgb_model is None or xgb_encoder is None or xgb_imputer is None or not xgb_feature_columns:
+        raise HTTPException(status_code=500, detail="Modelo XGBoost não carregado.")
+
+    effective_threshold = float(xgb_unknown_threshold if confidence_threshold is None else confidence_threshold)
+
+    raw_bytes = await image.read()
+    image_bgr, _ = _validate_image(image, raw_bytes)
+
+    try:
+        _, features = extractor.extract_from_image_array(image_bgr)
+    except ValueError as exc:
+        reason = "no_keypoints_detected"
+        if "Detecção parcial" in str(exc):
+            reason = "partial_keypoints_detected"
+        return ClassifyResponse(
+            recognized=False,
+            predicted_class=None,
+            confidence=None,
+            threshold=effective_threshold,
+            reason=reason,
+        )
+
+    vector = _xgb_vector_from_features(features, xgb_feature_columns).reshape(1, -1)
+    vector_imp = xgb_imputer.transform(vector)
+
+    proba = xgb_model.predict_proba(vector_imp)[0]
+    best_index = int(np.argmax(proba))
+    best_confidence = float(proba[best_index])
+    predicted_class = str(xgb_encoder.inverse_transform([best_index])[0])
+
+    recognized = best_confidence >= effective_threshold
+    reason = "recognized" if recognized else "below_confidence_threshold"
+
+    return ClassifyResponse(
+        recognized=recognized,
+        predicted_class=predicted_class if recognized else None,
+        confidence=round(best_confidence, 6),
+        threshold=effective_threshold,
+        reason=reason,
     )
 
 

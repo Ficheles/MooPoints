@@ -19,35 +19,35 @@ from pathlib import Path
 
 # Mapeia o índice do keypoint para uma parte anatômica da vaca.
 KEYPOINT_MAP = {
-    0: 'Head',
-    1: 'Neck',
-    2: 'Withers',
-    3: 'Back',
-    4: 'Hook',
-    5: 'Hip_ridge',
-    6: 'Tail_head',
-    7: 'Pin'
+    0: "withers",
+    1: "back",
+    2: "hook up",
+    3: "hook down",
+    4: "hip",
+    5: "tail head",
+    6: "pin up",
+    7: "pin down",
 }
 
 # Pares de pontos para cálculo de distância.
 DISTANCE_PAIRS = [
-    ('Head', 'Neck'),
-    ('Neck', 'Withers'),
-    ('Withers', 'Back'),
-    ('Back', 'Hook'),
-    ('Hook', 'Hip_ridge'),
-    ('Hip_ridge', 'Tail_head'),
-    ('Tail_head', 'Pin')
+    ("withers", "back"),
+    ("back", "hook up"),
+    ("hook up", "hook down"),
+    ("hook down", "hip"),
+    ("hip", "tail head"),
+    ("tail head", "pin up"),
+    ("pin up", "pin down"),
 ]
 
 # Tripletos de pontos para cálculo de ângulo. O ponto do meio é o vértice.
 ANGLE_TRIPLETS = [
-    ('Head', 'Neck', 'Withers'),
-    ('Neck', 'Withers', 'Back'),
-    ('Withers', 'Back', 'Hook'),
-    ('Back', 'Hook', 'Hip_ridge'),
-    ('Hook', 'Hip_ridge', 'Tail_head'),
-    ('Hip_ridge', 'Tail_head', 'Pin')
+    ("withers", "back", "hook up"),
+    ("back", "hook up", "hook down"),
+    ("hook up", "hook down", "hip"),
+    ("hook down", "hip", "tail head"),
+    ("hip", "tail head", "pin up"),
+    ("tail head", "pin up", "pin down"),
 ]
 
 
