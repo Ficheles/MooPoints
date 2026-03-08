@@ -2,6 +2,8 @@
 
 Projeto para preparação de dataset de bovinos, validação de anotações e teste de detecção/pose com YOLO.
 
+Também inclui uma API FastAPI para cadastro, identificação, remoção e listagem de vacas em base SQLite.
+
 ## Visão geral
 
 Este repositório possui três fluxos principais:
@@ -11,6 +13,7 @@ Este repositório possui três fluxos principais:
 3. **Rodar inferência de pose** com o script `key_point_detection_cow.py`.
 4. **Converter labels para YOLO Pose** com o script `convert_labels_to_yolo_pose.py`.
 5. **Treinar com K-Fold + transfer learning** com o script `train_yolo_kfold.py`.
+6. **Executar API FastAPI** para cadastro/identificação em SQLite.
 
 ## Estrutura principal
 
@@ -80,6 +83,33 @@ python src/train_yolo_kfold.py --continue-from-best
 O relatório consolidado é salvo em:
 
 - `/app/runs/kfold_pose/kfold_metrics_report.json`
+
+### 6) Executar API FastAPI
+
+Suba a API:
+
+```bash
+uvicorn src.api:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Endpoints principais:
+
+- `POST /cows/register`
+	- Entrada: `multipart/form-data` com campo `image`
+	- Ação: detecta keypoints da vaca, extrai features geométricas e salva no SQLite (`data/cows.db`)
+- `POST /cows/identify`
+	- Entrada: `multipart/form-data` com campo `image`
+	- Query opcional: `similarity_threshold` (padrão: `0.98`)
+	- Ação: compara features da imagem enviada com a base SQLite e informa se foi reconhecida
+- `DELETE /cows/{cow_id}`
+	- Ação: remove cadastro da vaca e sua imagem
+- `GET /cows`
+	- Ação: lista vacas cadastradas com `id` e imagem de cadastro (`image_url`)
+	- Query opcional: `include_base64=true` para retornar também a imagem em base64
+
+Endpoint auxiliar para visualizar a imagem de cadastro:
+
+- `GET /cows/{cow_id}/image`
 
 ## Sobre o script `key_point_detection_cow.py`
 
