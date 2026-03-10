@@ -40,25 +40,37 @@ cd MooPoints
 > git lfs pull
 > ```
 
-### 2) Instalação das dependências
+### 2) Criar e ativar o ambiente virtual
+
+```bash
+python -m venv .venv
+
+# Linux/macOS:
+source .venv/bin/activate
+
+# Windows:
+.venv\Scripts\activate
+```
+
+### 3) Instalar as dependências
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3) Subir API
+### 4) Subir API
 
 ```bash
 uvicorn src.api:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 4) Subir interface Streamlit
+### 5) Subir interface Streamlit
 
 ```bash
 streamlit run src/ui/streamlit_app.py
 ```
 
-### 5) Fluxo de treino recomendado (classificação por features)
+### 6) Fluxo de treino recomendado (classificação por features)
 
 ```bash
 python src/classification/prepare_classification_dataset.py \
