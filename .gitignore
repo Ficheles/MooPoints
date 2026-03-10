@@ -11,3 +11,6 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# Modelos YOLO grandes
+models/yolo/*.pt
