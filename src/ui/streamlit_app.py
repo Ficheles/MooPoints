@@ -1,6 +1,8 @@
 import io
+from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import requests
 import streamlit as st
 from PIL import Image, ImageDraw
@@ -33,6 +35,13 @@ def inject_styles() -> None:
                 border: 1px solid #e2e8f0;
                 margin-bottom: 1rem;
             }
+            .hero p {
+                margin: 0.35rem 0 0 0;
+            }
+            .hero h2 {
+                margin: 0 !important;
+                padding: 0 !important;
+            }
             .result-card {
                 background: white;
                 border-radius: 16px;
@@ -53,10 +62,44 @@ def inject_styles() -> None:
                 color: #64748b;
                 font-size: 0.9rem;
             }
+            /* Garantir que a coluna da direita exiba o formato de card e contenha os filhos. */
+            div[data-testid="column"]:nth-of-type(2) {
+                background: white;
+                border-radius: 16px;
+                padding: 1.25rem 1.25rem;
+                border: 1px solid #e2e8f0;
+                box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+            }
+            
+            /* Target Streamlit's container around the thumbnail */
+            .stImage > img {
+                border-radius: 12px;
+                display: block;
+            }
         </style>
         """,
         unsafe_allow_html=True,
     )
+
+
+@st.cache_data
+def load_class_images() -> dict[str, str]:
+    csv_path = Path(__file__).parent.parent.parent / "data" / "datasets" / "classifications" / "classes.csv"
+    if not csv_path.exists():
+        return {}
+    
+    try:
+        df = pd.read_csv(csv_path)
+        if "class_name" in df.columns and "image_url" in df.columns:
+            return df.set_index(df["class_name"].astype(str))["image_url"].to_dict()
+    except Exception as e:
+        print(f"Error loading classes.csv: {e}")
+    return {}
+
+
+@st.dialog("Imagem da Vaca Identificada")
+def show_full_image_modal(image_url: str):
+    st.image(image_url, use_container_width=True)
 
 
 def api_get(base_url: str, endpoint: str, timeout: int = 30) -> tuple[bool, Any]:
@@ -109,12 +152,13 @@ def api_get_reference_image(base_url: str, cow_id: int, timeout: int = 30) -> tu
         return False, str(exc)
 
 
-def sidebar_settings() -> tuple[str, float, int, bool]:
+def sidebar_settings() -> tuple[str, float, int, bool, bool]:
     st.sidebar.title("⚙️ Configurações")
     base_url = st.sidebar.text_input("URL da API", value="http://localhost:8000").rstrip("/")
-    threshold = st.sidebar.slider("Limiar de similaridade", min_value=0.20, max_value=0.999, value=0.98, step=0.005)
+    threshold = st.sidebar.slider("Limiar de similaridade", min_value=0.20, max_value=0.999, value=0.68, step=0.005)
     timeout = st.sidebar.slider("Timeout (segundos)", min_value=10, max_value=180, value=60, step=5)
     show_keypoints = st.sidebar.checkbox("Exibir keypoints na imagem", value=False)
+    show_reference_thumb = st.sidebar.checkbox("Exibir miniatura da vaca identificada", value=True)
 
     st.sidebar.markdown("---")
     st.sidebar.caption("Fluxo: envia foto → endpoint /cows/classify → retorna classe conhecida ou desconhecida.")
@@ -127,7 +171,7 @@ def sidebar_settings() -> tuple[str, float, int, bool]:
         else:
             st.sidebar.error(f"Falha na conexão: {payload}")
 
-    return base_url, threshold, timeout, show_keypoints
+    return base_url, threshold, timeout, show_keypoints, show_reference_thumb
 
 
 def draw_keypoints_overlay(
@@ -187,13 +231,14 @@ def friendly_reason(reason: str | None) -> tuple[str, str]:
 
 def main() -> None:
     inject_styles()
-    base_url, threshold, timeout, show_keypoints = sidebar_settings()
+    class_images = load_class_images()
+    base_url, threshold, timeout, show_keypoints, show_reference_thumb = sidebar_settings()
 
     st.markdown(
         """
         <div class='hero'>
-            <h2 style='margin:0;'>🐄 Identificação de Vacas</h2>
-            <p style='margin:0.35rem 0 0 0;' class='small-note'>
+            <h2>🐄 Identificação de Vacas</h2>
+            <p class='small-note'>
                 Envie uma foto de vaca e receba o resultado da identificação pela API:
                 classe conhecida na base ou <b>desconhecida</b>.
             </p>
@@ -236,7 +281,7 @@ def main() -> None:
                 st.session_state["last_uploaded_image"] = image_bytes
 
     with col_right:
-        st.markdown("<div class='result-card'>", unsafe_allow_html=True)
+        st.markdown("<div class='result-card-content'>", unsafe_allow_html=True)
         st.subheader("Resultado")
 
         result = st.session_state.get("last_result")
@@ -269,10 +314,16 @@ def main() -> None:
             st.success(f"Vaca reconhecida: classe **{matched_id}**")
             st.caption(f"Limiar aplicado: {used_threshold}")
 
-            if isinstance(matched_id, int) or (isinstance(matched_id, str) and matched_id.isdigit()):
-                ok_ref, ref_payload = api_get_reference_image(result_base_url, int(matched_id), timeout=min(timeout, 30))
-                if ok_ref:
-                    st.image(Image.open(io.BytesIO(ref_payload)), caption=f"Imagem de referência da vaca {matched_id}", use_container_width=True)
+            if show_reference_thumb:
+                str_match_id = str(matched_id)
+                image_url = class_images.get(str_match_id)
+
+                if image_url:
+                    c1, c2 = st.columns([1, 2])
+                    with c1:
+                        st.image(image_url, caption=f"Classe {matched_id}", use_container_width=True)
+                else:
+                    st.info("Miniatura não disponível no CSV.")
         else:
             level, message = friendly_reason(reason)
             if level == "info":

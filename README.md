@@ -19,6 +19,26 @@ Este repositório possui fluxos principais:
 6. **Executar API FastAPI** para cadastro/identificação em SQLite e classificação via XGBoost.
 7. **Classificação por 30 classes com features geométricas** (YOLO pose → features → XGBoost).
 
+## Imagem de referência
+
+Matriz de confusão do classificador:
+
+![Matriz de confusão](docs/confusion_matrix.png)
+
+## Capturas da Interface
+
+Visão da interface de identificação com painel de resultado:
+
+![Interface - Resultado](docs/images/image-1773154702649.png)
+
+Exemplo de keypoints detectados na imagem enviada:
+
+![Interface - Keypoints detectados](docs/images/image-1773154804849.png)
+
+Exemplo de visualização com bounding box e pontos-chave:
+
+![Interface - Bounding box e keypoints](docs/images/image-1773154830496.png)
+
 ## Estrutura principal
 
 - `src/keypoints/prepare_dataset.py`: organiza arquivos a partir de `data/fotos_anotadas/00_dataset` e gera folds em `data/datasets/keypoints` mantendo labels originais em `.json`.
