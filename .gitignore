@@ -1,6 +1,6 @@
-data/datasets/
-dataset_keypoint/
-dataset_classification/
+data/datasets/classifications/fold_*
+data/datasets/classifications/test/
+data/datasets/keypoints/fold_*
 fotos_anotadas/
 fotos_classificar/
 outputs/

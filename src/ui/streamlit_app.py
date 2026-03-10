@@ -16,70 +16,12 @@ st.set_page_config(
 
 
 def inject_styles() -> None:
-    st.markdown(
-        """
-        <style>
-            .main {
-                background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
-            }
-            .block-container {
-                max-width: 1100px;
-                padding-top: 1.5rem;
-                padding-bottom: 2rem;
-            }
-            .hero {
-                background: white;
-                border-radius: 18px;
-                padding: 1.2rem 1.4rem;
-                box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
-                border: 1px solid #e2e8f0;
-                margin-bottom: 1rem;
-            }
-            .hero p {
-                margin: 0.35rem 0 0 0;
-            }
-            .hero h2 {
-                margin: 0 !important;
-                padding: 0 !important;
-            }
-            .result-card {
-                background: white;
-                border-radius: 16px;
-                padding: 1rem 1.1rem;
-                border: 1px solid #e2e8f0;
-                box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
-            }
-            .metric-label {
-                font-size: 0.85rem;
-                color: #475569;
-            }
-            .metric-value {
-                font-size: 1.2rem;
-                font-weight: 700;
-                color: #0f172a;
-            }
-            .small-note {
-                color: #64748b;
-                font-size: 0.9rem;
-            }
-            /* Garantir que a coluna da direita exiba o formato de card e contenha os filhos. */
-            div[data-testid="column"]:nth-of-type(2) {
-                background: white;
-                border-radius: 16px;
-                padding: 1.25rem 1.25rem;
-                border: 1px solid #e2e8f0;
-                box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
-            }
-            
-            /* Target Streamlit's container around the thumbnail */
-            .stImage > img {
-                border-radius: 12px;
-                display: block;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    css_path = Path(__file__).parent / "style.css"
+    if css_path.exists():
+        with open(css_path) as f:
+            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    else:
+        st.warning("style.css não encontrado.")
 
 
 @st.cache_data
@@ -91,6 +33,18 @@ def load_class_images() -> dict[str, str]:
     try:
         df = pd.read_csv(csv_path)
         if "class_name" in df.columns and "image_url" in df.columns:
+            # We must resolve the relative image paths coming from the csv against the project root
+            # so they can be loaded by PIL/Streamlit.
+            project_root = Path(__file__).parent.parent.parent.resolve()
+            
+            # Convert 'data/...' into an absolute path
+            def format_path(url):
+                if pd.isna(url) or not str(url).strip():
+                    return ""
+                # If already absolute, keep it. Else append to project root.
+                return url if str(url).startswith("/") else str(project_root / str(url))
+
+            df["image_url"] = df["image_url"].apply(format_path)
             return df.set_index(df["class_name"].astype(str))["image_url"].to_dict()
     except Exception as e:
         print(f"Error loading classes.csv: {e}")
@@ -155,7 +109,7 @@ def api_get_reference_image(base_url: str, cow_id: int, timeout: int = 30) -> tu
 def sidebar_settings() -> tuple[str, float, int, bool, bool]:
     st.sidebar.title("⚙️ Configurações")
     base_url = st.sidebar.text_input("URL da API", value="http://localhost:8000").rstrip("/")
-    threshold = st.sidebar.slider("Limiar de similaridade", min_value=0.20, max_value=0.999, value=0.68, step=0.005)
+    threshold = st.sidebar.slider("Limiar de similaridade", min_value=0.20, max_value=0.999, value=0.80, step=0.005)
     timeout = st.sidebar.slider("Timeout (segundos)", min_value=10, max_value=180, value=60, step=5)
     show_keypoints = st.sidebar.checkbox("Exibir keypoints na imagem", value=False)
     show_reference_thumb = st.sidebar.checkbox("Exibir miniatura da vaca identificada", value=True)
@@ -167,7 +121,7 @@ def sidebar_settings() -> tuple[str, float, int, bool, bool]:
         ok, payload = api_get(base_url, "/cows", timeout=min(timeout, 30))
         if ok:
             items = payload.get("items", []) if isinstance(payload, dict) else []
-            st.sidebar.success(f"API online. Registros na base: {len(items)}")
+            st.sidebar.success(f"API online.")
         else:
             st.sidebar.error(f"Falha na conexão: {payload}")
 
