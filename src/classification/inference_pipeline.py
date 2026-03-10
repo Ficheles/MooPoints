@@ -4,87 +4,8 @@ import pandas as pd
 import joblib
 from pathlib import Path
 from ultralytics import YOLO
-
-# --- Constantes e Mapeamentos ---
-# (Reutilizados de extract_geometric_features.py para consistência)
-KEYPOINT_MAP = {
-    0: "withers",
-    1: "back",
-    2: "hook up",
-    3: "hook down",
-    4: "hip",
-    5: "tail head",
-    6: "pin up",
-    7: "pin down",
-}
-# DISTANCE_PAIRS = [
-#     ("withers", "back"),
-#     ("back", "hook up"),
-#     ("hook up", "hook down"),
-#     ("hook down", "hip"),
-#     ("hip", "tail head"),
-#     ("tail head", "pin up"),
-#     ("pin up", "pin down"),
-# ]
-DISTANCE_PAIRS = [
-    ("withers", "back"),
-    ("withers", "hook up"),
-    ("withers", "hook down"),
-    ("back", "hip"),
-    ("back", "hook up"),
-    ("back", "hook down"),
-    ("hook up", "hook down"),
-    ("hook up", "hip"),
-    ("hook down", "hip"),
-    ("hip", "tail head"),
-    ("hook up", "tail head"),
-    ("hook down", "tail head"),
-    ("hook up", "pin up"),
-    ("hook down", "pin down"),
-    ("tail head", "pin up"),
-    ("tail head", "pin down"),
-    ("pin up", "pin down"),
-]
-# ANGLE_TRIPLETS = [
-#     ("withers", "back", "hook up"),
-#     ("back", "hook up", "hook down"),
-#     ("hook up", "hook down", "hip"),
-#     ("hook down", "hip", "tail head"),
-#     ("hip", "tail head", "pin up"),
-#     ("tail head", "pin up", "pin down"),
-# ]
-
-ANGLE_TRIPLETS = [
-    ("withers", "back", "hook up"),
-    ("withers", "back", "hook down"),
-    ("withers", "hook up", "hook down"),
-    ("back", "hook up", "hook down"),
-    ("back", "hook up", "hip"),
-    ("back", "hook down", "hip"),
-    ("hook up", "hook down", "hip"),
-    ("hook up", "hook down", "tail head"),
-    ("hook up", "tail head", "pin up"),
-    ("hook down", "tail head", "pin down"),
-    ("tail head", "pin up", "pin down"),
-]
-
-
-# --- Funções de Cálculo ---
-def calculate_distance(p1, p2):
-    return np.linalg.norm(p1 - p2)
-
-def calculate_angle(p1, p2, p3):
-    v1 = p1 - p2
-    v2 = p3 - p2
-    angle = np.degrees(np.arctan2(v2[1], v2[0]) - np.arctan2(v1[1], v1[0]))
-    angle = np.abs(angle)
-    if angle > 180:
-        angle = 360 - angle
-    return angle
-
-
-def _slug(name: str) -> str:
-    return name.replace(" ", "_")
+from src.config.geometry import ANGLE_TRIPLETS, KEYPOINT_MAP, POINT_CONNECTIONS
+from src.utils.geometry import calculate_angle, calculate_distance, slug
 
 
 def build_feature_dict(keypoints: np.ndarray) -> dict[str, float]:
@@ -98,7 +19,7 @@ def build_feature_dict(keypoints: np.ndarray) -> dict[str, float]:
 
     features: dict[str, float] = {}
 
-    for p_name1, p_name2 in DISTANCE_PAIRS:
+    for p_name1, p_name2 in POINT_CONNECTIONS:
         features[f"dist_{p_name1}_{p_name2}"] = float(calculate_distance(keypoint_map[p_name1], keypoint_map[p_name2]))
 
     for p_name1, p_name2, p_name3 in ANGLE_TRIPLETS:
@@ -108,7 +29,7 @@ def build_feature_dict(keypoints: np.ndarray) -> dict[str, float]:
         for j in range(i + 1, required_kpts):
             n1 = ordered_names[i]
             n2 = ordered_names[j]
-            col = f"dist_pair_{_slug(n1)}_{_slug(n2)}"
+            col = f"dist_pair_{slug(n1)}_{slug(n2)}"
             features[col] = float(calculate_distance(keypoint_map[n1], keypoint_map[n2]))
 
     xs = keypoints[:, 0]
@@ -137,7 +58,7 @@ def build_feature_dict(keypoints: np.ndarray) -> dict[str, float]:
     features["kp_dist_centroid_max"] = float(np.max(dists_centroid))
 
     norm_ref = bbox_diag + 1e-6
-    for p_name1, p_name2 in DISTANCE_PAIRS:
+    for p_name1, p_name2 in POINT_CONNECTIONS:
         base_col = f"dist_{p_name1}_{p_name2}"
         features[f"{base_col}_norm_diag"] = float(features[base_col] / norm_ref)
 
@@ -147,7 +68,7 @@ def build_feature_dict(keypoints: np.ndarray) -> dict[str, float]:
         p1 = keypoint_map[n1]
         p2 = keypoint_map[n2]
         theta = float(np.degrees(np.arctan2(p2[1] - p1[1], p2[0] - p1[0])))
-        features[f"orient_{_slug(n1)}_{_slug(n2)}"] = theta
+        features[f"orient_{slug(n1)}_{slug(n2)}"] = theta
 
     return features
 

@@ -26,14 +26,9 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from ultralytics import YOLO
 
-from src.classification.inference_pipeline import (
-    ANGLE_TRIPLETS,
-    DISTANCE_PAIRS,
-    KEYPOINT_MAP,
-    build_feature_dict,
-    calculate_angle,
-    calculate_distance,
-)
+from src.classification.inference_pipeline import build_feature_dict
+from src.config.geometry import ANGLE_TRIPLETS, KEYPOINT_MAP, POINT_CONNECTIONS
+from src.utils.keypoint_features import build_xgb_feature_dict
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -94,7 +89,7 @@ def _init_db() -> None:
 
 def _feature_columns() -> list[str]:
     cols: list[str] = []
-    for p1, p2 in DISTANCE_PAIRS:
+    for p1, p2 in POINT_CONNECTIONS:
         cols.append(f"dist_{p1}_{p2}")
     for p1, p2, p3 in ANGLE_TRIPLETS:
         cols.append(f"angle_{p1}_{p2}_{p3}")
@@ -110,7 +105,7 @@ def _vector_from_features(features: dict[str, float]) -> np.ndarray:
 
 
 def _xgb_vector_from_features(features: dict[str, float], feature_columns: list[str]) -> np.ndarray:
-    values = [float(features[col]) for col in feature_columns]
+    values = [float(features.get(col, np.nan)) for col in feature_columns]
     return np.array(values, dtype=float)
 
 
@@ -127,6 +122,31 @@ def _cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
 
 def _to_jsonable_keypoints(keypoints: np.ndarray) -> list[list[float]]:
     return [[float(x), float(y)] for x, y in keypoints]
+
+
+def _build_xgb_features_from_keypoints(keypoints: np.ndarray) -> dict[str, float]:
+    return build_xgb_feature_dict(keypoints)
+
+
+def _render_keypoints_image(image_bgr: np.ndarray, keypoints: np.ndarray) -> str:
+    annotated = image_bgr.copy()
+
+    for x, y in keypoints:
+        cv2.circle(annotated, (int(x), int(y)), 4, (0, 0, 255), -1)
+
+    for p1, p2 in POINT_CONNECTIONS:
+        idx1 = next((idx for idx, name in KEYPOINT_MAP.items() if name == p1), None)
+        idx2 = next((idx for idx, name in KEYPOINT_MAP.items() if name == p2), None)
+        if idx1 is None or idx2 is None:
+            continue
+        pt1 = (int(keypoints[idx1][0]), int(keypoints[idx1][1]))
+        pt2 = (int(keypoints[idx2][0]), int(keypoints[idx2][1]))
+        cv2.line(annotated, pt1, pt2, (255, 0, 0), 2)
+
+    ok, encoded = cv2.imencode(".jpg", annotated)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Falha ao renderizar imagem com keypoints.")
+    return base64.b64encode(encoded.tobytes()).decode("utf-8")
 
 
 class CowFeatureExtractor:
@@ -212,6 +232,8 @@ class ClassifyResponse(BaseModel):
     reason: str | None = None
     keypoints: list[list[float]] | None = None
     keypoint_names: list[str] | None = None
+    annotated_image_base64: str | None = None
+    annotated_image_mime: str | None = None
 
 
 app = FastAPI(title="Cow Classifier API", version="1.0.0")
@@ -391,6 +413,7 @@ async def classify_cow(
     image: UploadFile = File(...),
     confidence_threshold: float | None = Query(default=None, ge=0.0, le=1.0),
     include_keypoints: bool = Query(default=False),
+    include_annotated_image: bool = Query(default=False),
 ) -> ClassifyResponse:
     if extractor is None:
         raise HTTPException(status_code=500, detail="Extrator de features não inicializado.")
@@ -417,9 +440,12 @@ async def classify_cow(
             reason=reason,
             keypoints=None,
             keypoint_names=None,
+            annotated_image_base64=None,
+            annotated_image_mime=None,
         )
 
-    vector = _xgb_vector_from_features(features, xgb_feature_columns).reshape(1, -1)
+    xgb_features = _build_xgb_features_from_keypoints(keypoints)
+    vector = _xgb_vector_from_features(xgb_features, xgb_feature_columns).reshape(1, -1)
     vector_imp = xgb_imputer.transform(vector)
 
     proba = xgb_model.predict_proba(vector_imp)[0]
@@ -430,6 +456,8 @@ async def classify_cow(
     recognized = best_confidence >= effective_threshold
     reason = "recognized" if recognized else "below_confidence_threshold"
 
+    annotated_image_base64 = _render_keypoints_image(image_bgr, keypoints) if include_annotated_image else None
+
     return ClassifyResponse(
         recognized=recognized,
         predicted_class=predicted_class if recognized else None,
@@ -438,6 +466,8 @@ async def classify_cow(
         reason=reason,
         keypoints=_to_jsonable_keypoints(keypoints) if include_keypoints else None,
         keypoint_names=[KEYPOINT_MAP[i] for i in range(len(KEYPOINT_MAP))] if include_keypoints else None,
+        annotated_image_base64=annotated_image_base64,
+        annotated_image_mime="image/jpeg" if include_annotated_image else None,
     )
 
 

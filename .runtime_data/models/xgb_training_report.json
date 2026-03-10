@@ -1,0 +1,65 @@
+{
+  "features_csv": "/mnt/data/Projects/python/IFG-Computer_vision/cow-classifier/dataset_classification/geometric_features.csv",
+  "num_classes": 30,
+  "classes": [
+    1106,
+    1122,
+    1221,
+    1287,
+    1288,
+    1294,
+    1321,
+    1323,
+    1325,
+    1328,
+    1351,
+    1356,
+    1362,
+    1377,
+    1386,
+    1391,
+    1397,
+    1399,
+    1439,
+    1440,
+    1446,
+    1456,
+    1463,
+    1464,
+    1473,
+    1491,
+    1495,
+    1531,
+    1539,
+    1562
+  ],
+  "unknown_threshold": 0.36656835675239563,
+  "train_metrics": {
+    "samples": 1080,
+    "accuracy": 1.0,
+    "f1_macro": 1.0,
+    "max_proba_mean": 0.9664860367774963,
+    "max_proba_p10": 0.9382461309432983
+  },
+  "val_metrics": {
+    "samples": 270,
+    "accuracy": 0.5666666666666667,
+    "f1_macro": 0.5599665220935915,
+    "max_proba_mean": 0.5966241955757141,
+    "max_proba_p10": 0.26486650109291077
+  },
+  "test_metrics": {
+    "samples": 150,
+    "accuracy": 0.5666666666666667,
+    "f1_macro": 0.5572699522699522,
+    "max_proba_mean": 0.6269891262054443,
+    "max_proba_p10": 0.26983144879341125
+  },
+  "artifacts": {
+    "model": "/mnt/data/Projects/python/IFG-Computer_vision/cow-classifier/.runtime_data/models/xgboost_cow_id.pkl",
+    "label_encoder": "/mnt/data/Projects/python/IFG-Computer_vision/cow-classifier/.runtime_data/models/xgb_label_encoder.pkl",
+    "imputer": "/mnt/data/Projects/python/IFG-Computer_vision/cow-classifier/.runtime_data/models/xgb_imputer.pkl",
+    "feature_columns": "/mnt/data/Projects/python/IFG-Computer_vision/cow-classifier/.runtime_data/models/xgb_feature_columns.json",
+    "threshold": "/mnt/data/Projects/python/IFG-Computer_vision/cow-classifier/.runtime_data/models/xgb_unknown_threshold.json"
+  }
+}

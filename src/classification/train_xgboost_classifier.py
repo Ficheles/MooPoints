@@ -43,8 +43,12 @@ def split_dataset(df: pd.DataFrame):
 
 
 def feature_columns(df: pd.DataFrame):
-    excluded = {"image_path", "class_name", "split"}
-    return [col for col in df.columns if col not in excluded]
+    excluded = {"image_path", "payload_path", "class_name", "cow_id", "fold", "split"}
+    candidates = [col for col in df.columns if col not in excluded]
+    numeric_candidates = [col for col in candidates if pd.api.types.is_numeric_dtype(df[col])]
+    if not numeric_candidates:
+        raise ValueError("Nenhuma coluna numérica de feature encontrada no CSV.")
+    return numeric_candidates
 
 
 def evaluate(model, label_encoder, imputer, feature_cols, eval_df: pd.DataFrame):

@@ -112,7 +112,7 @@ def api_get_reference_image(base_url: str, cow_id: int, timeout: int = 30) -> tu
 def sidebar_settings() -> tuple[str, float, int, bool]:
     st.sidebar.title("⚙️ Configurações")
     base_url = st.sidebar.text_input("URL da API", value="http://localhost:8000").rstrip("/")
-    threshold = st.sidebar.slider("Limiar de similaridade", min_value=0.50, max_value=0.999, value=0.98, step=0.005)
+    threshold = st.sidebar.slider("Limiar de similaridade", min_value=0.20, max_value=0.999, value=0.98, step=0.005)
     timeout = st.sidebar.slider("Timeout (segundos)", min_value=10, max_value=180, value=60, step=5)
     show_keypoints = st.sidebar.checkbox("Exibir keypoints na imagem", value=False)
 

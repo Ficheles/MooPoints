@@ -1,57 +1,14 @@
 import argparse
 import csv
 import json
-import math
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from ultralytics import YOLO
 
-KEYPOINT_MAP = {
-    0: "withers",
-    1: "back",
-    2: "hook up",
-    3: "hook down",
-    4: "hip",
-    5: "tail head",
-    6: "pin up",
-    7: "pin down",
-}
-
-POINT_CONNECTIONS = [
-    ("withers", "back"),
-    ("withers", "hook up"),
-    ("withers", "hook down"),
-    ("back", "hip"),
-    ("back", "hook up"),
-    ("back", "hook down"),
-    ("hook up", "hook down"),
-    ("hook up", "hip"),
-    ("hook down", "hip"),
-    ("hip", "tail head"),
-    ("hook up", "tail head"),
-    ("hook down", "tail head"),
-    ("hook up", "pin up"),
-    ("hook down", "pin down"),
-    ("tail head", "pin up"),
-    ("tail head", "pin down"),
-    ("pin up", "pin down"),
-]
-
-ANGLE_TRIPLETS = [
-    ("withers", "back", "hook up"),
-    ("withers", "back", "hook down"),
-    ("withers", "hook up", "hook down"),
-    ("back", "hook up", "hook down"),
-    ("back", "hook up", "hip"),
-    ("back", "hook down", "hip"),
-    ("hook up", "hook down", "hip"),
-    ("hook up", "hook down", "tail head"),
-    ("hook up", "tail head", "pin up"),
-    ("hook down", "tail head", "pin down"),
-    ("tail head", "pin up", "pin down"),
-]
+from src.config.geometry import KEYPOINT_MAP
+from src.utils.keypoint_features import build_xgb_feature_dict
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
 
@@ -91,10 +48,6 @@ def parse_args():
         help="Tamanho de inferência para predição de pose.",
     )
     return parser.parse_args()
-
-
-def slug(name: str) -> str:
-    return name.replace(" ", "_")
 
 
 def extract_cow_id_from_filename(image_path: Path) -> str:
@@ -174,44 +127,8 @@ def select_first_keypoints(result) -> np.ndarray:
     return first[: len(KEYPOINT_MAP)]
 
 
-def distance(p1: np.ndarray, p2: np.ndarray) -> float:
-    return float(np.linalg.norm(p1 - p2))
-
-
-def angle(p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> float:
-    v1 = p1 - p2
-    v2 = p3 - p2
-    denom = (np.linalg.norm(v1) * np.linalg.norm(v2))
-    if denom <= 1e-12:
-        return float("nan")
-
-    cos_theta = float(np.dot(v1, v2) / denom)
-    cos_theta = max(-1.0, min(1.0, cos_theta))
-    return float(np.degrees(math.acos(cos_theta)))
-
-
-def triangle_area(p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> float:
-    return float(abs(np.cross(p2 - p1, p3 - p1)) / 2.0)
-
-
 def build_features_from_keypoints(points: np.ndarray):
-    kp = {KEYPOINT_MAP[i]: points[i] for i in range(len(KEYPOINT_MAP))}
-    features = {}
-
-    for p1, p2 in POINT_CONNECTIONS:
-        features[f"dist_{slug(p1)}__{slug(p2)}"] = distance(kp[p1], kp[p2])
-
-    for a, b, c in ANGLE_TRIPLETS:
-        area = triangle_area(kp[a], kp[b], kp[c])
-        if area <= 1e-12:
-            continue
-
-        features[f"angle_{slug(a)}__{slug(b)}__{slug(c)}_at_{slug(a)}"] = angle(kp[b], kp[a], kp[c])
-        features[f"angle_{slug(a)}__{slug(b)}__{slug(c)}_at_{slug(b)}"] = angle(kp[a], kp[b], kp[c])
-        features[f"angle_{slug(a)}__{slug(b)}__{slug(c)}_at_{slug(c)}"] = angle(kp[a], kp[c], kp[b])
-        features[f"triangle_area_{slug(a)}__{slug(b)}__{slug(c)}"] = area
-
-    return features
+    return build_xgb_feature_dict(points)
 
 
 def main():

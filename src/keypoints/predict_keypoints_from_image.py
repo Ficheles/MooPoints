@@ -120,9 +120,9 @@ def main():
     save_image_value = args.save_image
 
     if save_json_value == "__AUTO__":
-        save_json_value = str(auto_dir / f"{image_path.stem}_keypoints.json")
+        save_json_value = str(auto_dir / f"labels/{image_path.stem}.json")
     if save_image_value == "__AUTO__":
-        save_image_value = str(auto_dir / f"{image_path.stem}_keypoints.jpg")
+        save_image_value = str(auto_dir / f"images/ {image_path.stem}.jpg")
 
     if save_json_value:
         save_json_path = Path(save_json_value)
