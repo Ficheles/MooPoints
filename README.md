@@ -9,25 +9,56 @@ Projeto de identificação/classificação de vacas com pipeline de visão compu
 
 ## Comece por aqui
 
-### 1) Instalação
+### Pré-requisitos
+
+- Python 3.10+
+- [Git LFS](https://git-lfs.com/) instalado na máquina
+
+### 1) Clonar o repositório com Git LFS
+
+O modelo `models/yolo/best.pt` (~121 MB) é armazenado via **Git LFS**. É necessário ter o Git LFS instalado **antes** de clonar o repositório para que o arquivo seja baixado corretamente.
+
+```bash
+# Instalar Git LFS (caso ainda não tenha)
+# Ubuntu/Debian:
+sudo apt install git-lfs
+
+# macOS (Homebrew):
+brew install git-lfs
+
+# Após instalar, ativar o LFS no sistema (uma vez por máquina):
+git lfs install
+
+# Clonar o repositório normalmente — o LFS baixará o best.pt automaticamente:
+git clone https://github.com/Ficheles/MooPoints.git
+cd MooPoints
+```
+
+> **Repositório já clonado sem LFS?** Execute os comandos abaixo para baixar os arquivos LFS retroativamente:
+> ```bash
+> git lfs install
+> git lfs pull
+> ```
+
+### 2) Instalação das dependências
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2) Subir API
+### 3) Subir API
 
 ```bash
 uvicorn src.api:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 3) Subir interface Streamlit
+### 4) Subir interface Streamlit
 
 ```bash
 streamlit run src/ui/streamlit_app.py
 ```
 
-### 4) Fluxo de treino recomendado (classificação por features)
+### 5) Fluxo de treino recomendado (classificação por features)
 
 ```bash
 python src/classification/prepare_classification_dataset.py \
