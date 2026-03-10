@@ -1,194 +1,113 @@
 # Cow Classifier
 
-Projeto para preparação de dataset de bovinos, validação de anotações e teste de detecção/pose com YOLO.
+Projeto de identificação/classificação de vacas com pipeline de visão computacional:
 
-## Visão geral
+- **YOLO Pose** para detectar keypoints;
+- **features geométricas** para representação da postura;
+- **XGBoost** para classificar entre classes conhecidas;
+- **FastAPI + Streamlit** para uso via API e interface web.
 
-Este repositório possui três fluxos principais:
+## Comece por aqui
 
-1. **Preparar dataset** com links simbólicos e criação de folds.
-2. **Validar anotações** para checar bbox e keypoints obrigatórios.
-3. **Rodar inferência de pose** com o script `key_point_detection_cow.py`.
-4. **Converter labels para YOLO Pose** com o script `convert_labels_to_yolo_pose.py`.
-5. **Treinar com K-Fold + transfer learning** com o script `train_yolo_kfold.py`.
-
-## Estrutura principal
-
-- `src/prepare_dataset.py`: organiza arquivos, cria links em `fotos_anotadas/00_dataset` e gera folds em `dataset/` mantendo labels originais em `.json`.
-- `src/validate_annotations.py`: valida as anotações no diretório preparado.
-- `src/key_point_detection_cow.py`: executa detecção + pose usando modelos YOLO.
-- `src/convert_labels_to_yolo_pose.py`: lê labels `.json` (Label Studio) e gera labels `.txt` no formato YOLO Pose.
-- `src/train_yolo_kfold.py`: treina YOLO Pose usando os folds já prontos em `dataset/`.
-- `docker-compose.yml`: execução do projeto em container.
-
-## Como usar localmente (Python)
-
-### Pré-requisitos
-
-- Python 3.12+
-- Pip
-
-### Instalação
+### 1) Instalação
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 1) Preparar dataset
+### 2) Subir API
 
 ```bash
-python src/prepare_dataset.py
+uvicorn src.api:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 2) Validar anotações
+### 3) Subir interface Streamlit
 
 ```bash
-python src/validate_annotations.py
+streamlit run src/ui/streamlit_app.py
 ```
 
-### 3) Executar inferência de pose
+### 4) Fluxo de treino recomendado (classificação por features)
 
 ```bash
-python src/key_point_detection_cow.py
+python src/classification/prepare_classification_dataset.py \
+  --input-root data/fotos_classificar \
+  --output-root data/datasets/classifications \
+  --test-size 0.10 \
+  --n-splits 5 \
+  --clean-output
+
+python -m src.classification.extract_geometric_features \
+  --dataset-root data/datasets/classifications \
+  --model-path models/yolo/best.pt \
+  --output-csv data/datasets/classifications/geometric_features.csv
+
+python -m src.classification.train_xgboost_classifier \
+  --features-csv data/datasets/classifications/geometric_features.csv \
+  --models-dir models/xgboost
 ```
 
-### 4) Converter labels para YOLO Pose (obrigatório antes do treino)
+## Documentação detalhada
 
-```bash
-python src/convert_labels_to_yolo_pose.py --dataset-root /app/dataset
-```
+Para entender arquitetura, fluxos de treino/inferência e a integração API + Streamlit, consulte:
 
-### 5) Treinar com K-Fold (transfer learning)
+- [Funcionamento do Projeto](docs/PROJECT_WORKFLOW.md)
 
-```bash
-python src/train_yolo_kfold.py \
-	--dataset-root /app/dataset \
-	--models-dir /app/models \
-	--base-model yolo11x-pose.pt \
-	--epochs 100 \
-	--batch 8 \
-	--imgsz 640 \
-	--device cpu
-```
+## Capturas da Interface
 
-Para continuar o treino depois usando o melhor checkpoint salvo de cada fold:
+Na interface Streamlit, o uso é simples: você envia a foto da vaca, a aplicação chama a API para processar a imagem e o sistema retorna se a vaca foi reconhecida (ou não), com classe prevista e confiança/similaridade.
 
-```bash
-python src/train_yolo_kfold.py --continue-from-best
-```
+Fluxo resumido da predição:
 
-O relatório consolidado é salvo em:
+1. Upload da imagem na interface.
+2. Envio para o endpoint `POST /cows/classify`.
+3. Detecção de keypoints + extração de features geométricas.
+4. Predição com o modelo XGBoost.
+5. Exibição amigável do resultado no painel da interface.
 
-- `/app/runs/kfold_pose/kfold_metrics_report.json`
+Interface do sistema em **Streamlit** realizando a predição via **API FastAPI** (`POST /cows/classify`), com painel de resultado e similaridade:
 
-## Sobre o script `key_point_detection_cow.py`
+![Interface Streamlit - Predição via API](docs/images/streamlit-api-prediction-interface.png)
 
-Esse script:
+Exemplo de keypoints detectados na imagem enviada:
 
-- Carrega uma imagem de entrada (`/app/dataset_samples/person.png`).
-- Usa dois modelos:
-  - detecção (`yolo26n.pt`)
-  - pose (`yolo26n-pose.pt`)
-- Desenha caixa e esqueleto dos keypoints.
-- Salva a saída em `/app/dataset_samples/person-pose_with_skeleton.png`.
+![Interface - Keypoints detectados](docs/images/image-1773154804849.png)
 
-Os nomes dos modelos são configuráveis por variáveis de ambiente:
+Exemplo de visualização com bounding box e pontos-chave:
 
-- `MODEL_DIR` (padrão `/app/models`)
-- `DETECTION_MODEL_NAME` (padrão `yolo26n.pt`)
-- `POSE_MODEL_NAME` (padrão `yolo26n-pose.pt`)
+![Interface - Bounding box e keypoints](docs/images/image-1773154830496.png)
 
-## Sobre o script `train_yolo_kfold.py`
+## Estrutura principal
 
-Esse script foi feito para treinar em cima do dataset já separado por folds (`dataset/fold_*`) com `images/` e `labels/`.
+- `src/api.py`: API FastAPI com endpoints de cadastro, identificação e classificação.
+- `src/ui/streamlit_app.py`: interface web para classificação com retorno amigável.
+- `src/config/geometry.py`: constantes geométricas centralizadas (`KEYPOINT_MAP`, `POINT_CONNECTIONS`, `ANGLE_TRIPLETS`).
+- `src/utils/`: utilitários reutilizáveis de geometria e extração de features (DRY).
+- `src/classification/`: preparação de dataset, extração de features e treino de classificadores.
+- `src/keypoints/`: preparação/validação de anotações e treino YOLO Pose.
 
-> Antes do treino, execute `convert_labels_to_yolo_pose.py` para transformar os `.json` em `.txt` no formato esperado pelo YOLO.
+## Endpoints principais
 
-O script de conversão:
+- `POST /cows/register`: cadastra vaca no SQLite com imagem + features.
+- `POST /cows/identify`: identifica vaca por similaridade entre features.
+- `POST /cows/classify`: classifica vaca com XGBoost (com limiar de confiança).
+- `GET /cows`: lista cadastros.
+- `GET /cows/{cow_id}/image`: retorna imagem de cadastro.
+- `DELETE /cows/{cow_id}`: remove cadastro.
 
-- lê os labels originais `fold_*/labels/*/*.json`;
-- gera os correspondentes `fold_*/labels/*/*.txt`;
+## Observações importantes
 
-Ele faz automaticamente:
+- O fluxo principal de produção é **YOLO Pose → features geométricas → XGBoost**.
+- O fluxo legado de classificação direta por imagem (`train_image_classifier_kfold.py`) continua disponível.
+- Os pesos YOLO `.pt` devem ser gerenciados fora do Git (arquivo grande), com referência via `models/yolo/`.
 
-- Busca dos `data_fold_*.yaml` em cada fold.
-- Treino por fold com transfer learning a partir de um modelo base em `/app/models`.
-- Registro das métricas por fold (box e pose).
-- Salvamento do melhor e último checkpoint (`best.pt` e `last.pt`).
-- Geração de relatório consolidado com estatísticas.
-
-Principais variáveis/opções:
-
-- `MODEL_DIR` (padrão `/app/models`)
-- `TRAIN_MODEL_NAME` (padrão `yolo26n-pose.pt`)
-- `DATASET_ROOT` (padrão `/app/dataset`)
-- `CONTINUE_FROM_BEST=true` para retomar do `best.pt`
-
-Template de métricas geradas pelo relatório (estrutura):
-
-```text
-k_folds: 5
-Box_mAP50 (média dos folds): ...
-Box_mAP50-95 (média dos folds): ...
-Pose_mAP50 (média dos folds): ...
-Pose_mAP50-95 (média dos folds): ...
-Pose_mAP50-95 (melhor fold): ...
-
-Métricas no teste final:
-accuracy: ...
-f1_macro: ...
-top1_accuracy: ...
-top3_accuracy: ...
-top5_accuracy: ...
-
-Com rejeição (confianca_min=0.30):
-cobertura: ...
-accuracy_aceitas: ...
-f1_macro_aceitas: ...
-```
-
-## Como usar com Docker
-
-### Pré-requisitos
-
-- Docker
-- Docker Compose
-
-### 1) Garanta os modelos no host
-
-Coloque os arquivos de modelo em `./models`:
-
-- `./models/yolo26n.pt`
-- `./models/yolo26n-pose.pt`
-
-> O diretório `models` é montado como bind mount em `/app/models` e usado apenas em runtime.
-
-### 2) Subir com compose
+## Docker (opcional)
 
 ```bash
 docker compose up --build
 ```
 
-### 3) Executar comandos manuais (interativo)
-
-```bash
-docker compose run --rm prepare-dataset sh
-```
-
-Dentro do container, por exemplo:
-
-```bash
-python src/prepare_dataset.py
-python src/validate_annotations.py
-python src/key_point_detection_cow.py
-python src/convert_labels_to_yolo_pose.py --dataset-root /app/dataset
-python src/train_yolo_kfold.py --epochs 50 --continue-from-best
-```
-
-## Dicas rápidas
-
-- Se aparecer aviso do Ultralytics sobre config, o projeto já usa `YOLO_CONFIG_DIR` no compose.
-- Para limpar containers/parar execução:
+Para parar:
 
 ```bash
 docker compose down

@@ -1,6 +1,9 @@
-dataset/
+data/datasets/classifications/fold_*
+data/datasets/classifications/test/
+data/datasets/keypoints/fold_*
 fotos_anotadas/
-models/
+fotos_classificar/
+outputs/
 .env
 .venv/
 venv/

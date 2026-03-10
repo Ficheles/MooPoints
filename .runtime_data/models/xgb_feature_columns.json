@@ -1,0 +1,17 @@
+{
+  "feature_columns": [
+    "dist_withers_back",
+    "dist_back_hook up",
+    "dist_hook up_hook down",
+    "dist_hook down_hip",
+    "dist_hip_tail head",
+    "dist_tail head_pin up",
+    "dist_pin up_pin down",
+    "angle_withers_back_hook up",
+    "angle_back_hook up_hook down",
+    "angle_hook up_hook down_hip",
+    "angle_hook down_hip_tail head",
+    "angle_hip_tail head_pin up",
+    "angle_tail head_pin up_pin down"
+  ]
+}

@@ -1,0 +1,59 @@
+.main {
+    background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+}
+.block-container {
+    max-width: 1100px;
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
+}
+.hero {
+    background: white;
+    border-radius: 18px;
+    padding: 1.2rem 1.4rem;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    border: 1px solid #e2e8f0;
+    margin-bottom: 1rem;
+}
+.hero p {
+    margin: 0.35rem 0 0 0;
+}
+.hero h2 {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+.result-card {
+    background: white;
+    border-radius: 16px;
+    padding: 1rem 1.1rem;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+}
+.metric-label {
+    font-size: 0.85rem;
+    color: #475569;
+}
+.metric-value {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+.small-note {
+    color: #64748b;
+    font-size: 0.9rem;
+}
+/* Garantir que a coluna da direita exiba o formato de card e contenha os filhos. */
+div[data-testid="verticalBlock"] > div:nth-child(2) > div[data-testid="stVerticalBlockBorderWrapper"]:has(.result-card-content),
+div[data-testid="column"]:nth-of-type(2) > div[data-testid="stVerticalBlockBorderWrapper"],
+div[data-testid="column"]:nth-of-type(2) {
+    background: white !important;
+    border-radius: 16px !important;
+    padding: 1.25rem 1.25rem !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06) !important;
+}
+
+/* Target Streamlit's container around the thumbnail */
+.stImage > img {
+    border-radius: 12px;
+    display: block;
+}
