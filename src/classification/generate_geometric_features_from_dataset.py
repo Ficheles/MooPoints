@@ -16,21 +16,21 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "Gera features geométricas para classificação a partir de imagens do dataset_classification "
+            "Gera features geométricas para classificação a partir de imagens do data/datasets/classifications "
             "usando modelo YOLO de keypoints."
         )
     )
-    parser.add_argument("--dataset-root", default="dataset_classification", help="Diretório raiz do dataset de classificação.")
+    parser.add_argument("--dataset-root", default="data/datasets/classifications", help="Diretório raiz do dataset de classificação.")
     parser.add_argument("--fold", type=int, default=0, help="Fold a utilizar para train/val (padrão: 0).")
     parser.add_argument("--model-path", default="models/yolo/yolo11x-pose.pt", help="Modelo YOLO pose para extração de keypoints.")
     parser.add_argument(
         "--output-csv",
-        default="dataset_classification/geometric_features.csv",
+        default="data/datasets/classifications/geometric_features.csv",
         help="CSV de saída com as features geométricas.",
     )
     parser.add_argument(
         "--output-report",
-        default="dataset_classification/geometric_features_report.json",
+        default="data/datasets/classifications/geometric_features_report.json",
         help="JSON de relatório do processo de extração.",
     )
     return parser.parse_args()
@@ -40,6 +40,9 @@ def find_images(split_root: Path):
     items = []
     if not split_root.exists():
         return items
+
+    if (split_root / "images").exists():
+        split_root = split_root / "images"
 
     for class_dir in sorted([d for d in split_root.iterdir() if d.is_dir()]):
         for path in class_dir.rglob("*"):

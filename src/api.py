@@ -37,7 +37,7 @@ from src.classification.inference_pipeline import (
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
-MODEL_PATH = PROJECT_ROOT / "models" / "yolo" / "yolo11x-pose.pt"
+MODEL_PATH = PROJECT_ROOT / "models" / "yolo" / "best.pt"
 DB_PATH = PROJECT_ROOT / "data" / "cows.db"
 IMAGES_DIR = PROJECT_ROOT / "data" / "registered_cows"
 XGB_MODEL_PATH = PROJECT_ROOT / "models" / "xgboost" / "xgboost_cow_id.pkl"

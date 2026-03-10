@@ -15,7 +15,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Treina XGBoost com features geométricas para 30 classes.")
     parser.add_argument(
         "--features-csv",
-        default="dataset_classification/geometric_features.csv",
+        default="data/datasets/classifications/geometric_features.csv",
         help="CSV com features geométricas e colunas class_name/split.",
     )
     parser.add_argument("--models-dir", default="models/xgboost", help="Diretório de saída dos artefatos do modelo.")

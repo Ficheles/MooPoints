@@ -15,12 +15,12 @@ def parse_args():
     )
     parser.add_argument(
         "--dataset-root",
-        default=os.getenv("DATASET_ROOT", "/app/dataset"),
+        default=os.getenv("DATASET_ROOT", "data/datasets/keypoints"),
         help="Diretório raiz com fold_*/data_fold_*.yaml",
     )
     parser.add_argument(
         "--models-dir",
-        default=os.getenv("MODEL_DIR", "/app/models/yolo"),
+        default=os.getenv("MODEL_DIR", "models/yolo"),
         help="Diretório com pesos base de transfer learning",
     )
     parser.add_argument(
@@ -53,7 +53,7 @@ def parse_args():
     )
     parser.add_argument(
         "--project",
-        default=os.getenv("TRAIN_PROJECT", "/app/runs/kfold_pose"),
+        default=os.getenv("TRAIN_PROJECT", "runs/kfold_pose"),
         help="Diretório base para saída dos treinos",
     )
     parser.add_argument(

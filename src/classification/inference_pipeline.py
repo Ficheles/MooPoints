@@ -1,19 +1,3 @@
-"""
-Módulo de Inferência End-to-End para Identificação de Bovinos.
-
-Este script carrega o modelo YOLO-Pose treinado e o classificador XGBoost
-para realizar a predição da identidade de uma vaca (cow_id) a partir de uma
-única imagem.
-
-O pipeline executa os seguintes passos:
-1. Carrega uma imagem de entrada.
-2. Usa o modelo YOLO para detectar os 8 pontos-chave.
-3. Calcula as features geométricas (distâncias e ângulos) a partir dos pontos.
-4. Usa o classificador XGBoost para prever a 'cow_id'.
-
-Autor: GitHub Copilot
-Data: 2026-03-05
-"""
 import argparse
 import numpy as np
 import pandas as pd
@@ -33,23 +17,57 @@ KEYPOINT_MAP = {
     6: "pin up",
     7: "pin down",
 }
+# DISTANCE_PAIRS = [
+#     ("withers", "back"),
+#     ("back", "hook up"),
+#     ("hook up", "hook down"),
+#     ("hook down", "hip"),
+#     ("hip", "tail head"),
+#     ("tail head", "pin up"),
+#     ("pin up", "pin down"),
+# ]
 DISTANCE_PAIRS = [
     ("withers", "back"),
+    ("withers", "hook up"),
+    ("withers", "hook down"),
+    ("back", "hip"),
     ("back", "hook up"),
+    ("back", "hook down"),
     ("hook up", "hook down"),
+    ("hook up", "hip"),
     ("hook down", "hip"),
     ("hip", "tail head"),
+    ("hook up", "tail head"),
+    ("hook down", "tail head"),
+    ("hook up", "pin up"),
+    ("hook down", "pin down"),
     ("tail head", "pin up"),
+    ("tail head", "pin down"),
     ("pin up", "pin down"),
 ]
+# ANGLE_TRIPLETS = [
+#     ("withers", "back", "hook up"),
+#     ("back", "hook up", "hook down"),
+#     ("hook up", "hook down", "hip"),
+#     ("hook down", "hip", "tail head"),
+#     ("hip", "tail head", "pin up"),
+#     ("tail head", "pin up", "pin down"),
+# ]
+
 ANGLE_TRIPLETS = [
     ("withers", "back", "hook up"),
+    ("withers", "back", "hook down"),
+    ("withers", "hook up", "hook down"),
     ("back", "hook up", "hook down"),
+    ("back", "hook up", "hip"),
+    ("back", "hook down", "hip"),
     ("hook up", "hook down", "hip"),
-    ("hook down", "hip", "tail head"),
-    ("hip", "tail head", "pin up"),
+    ("hook up", "hook down", "tail head"),
+    ("hook up", "tail head", "pin up"),
+    ("hook down", "tail head", "pin down"),
     ("tail head", "pin up", "pin down"),
 ]
+
 
 # --- Funções de Cálculo ---
 def calculate_distance(p1, p2):

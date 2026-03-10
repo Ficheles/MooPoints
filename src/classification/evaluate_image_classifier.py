@@ -11,11 +11,11 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Avalia classificador por imagem no conjunto dataset_classification/test.",
+        description="Avalia classificador por imagem no conjunto data/datasets/classifications/test/images.",
     )
     parser.add_argument(
         "--test-root",
-        default="dataset_classification/test",
+        default="data/datasets/classifications/test/images",
         help="Diretório de teste com subpastas por classe.",
     )
     parser.add_argument(

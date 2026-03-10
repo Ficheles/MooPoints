@@ -30,12 +30,12 @@ def parse_args():
     )
     parser.add_argument(
         "--input-root",
-        default="fotos_classificar",
+        default="data/fotos_classificar",
         help="Diretório com imagens originais (preferencialmente em subpastas por classe).",
     )
     parser.add_argument(
         "--output-root",
-        default="dataset_classification",
+        default="data/datasets/classifications",
         help="Diretório de saída para treino e avaliação de classificação.",
     )
     parser.add_argument(
@@ -244,7 +244,7 @@ def main():
 
     materialize_split(
         test_df,
-        destination_root=output_root / "test",
+        destination_root=output_root / "test" / "images",
         use_symlinks=args.use_symlinks,
     )
 
@@ -263,8 +263,8 @@ def main():
             raise RuntimeError(f"Vazamento detectado no fold {fold_id}: {sorted(leak)[:5]}")
 
         fold_root = output_root / f"fold_{fold_id}"
-        materialize_split(train_df, fold_root / "train", args.use_symlinks)
-        materialize_split(val_df, fold_root / "val", args.use_symlinks)
+        materialize_split(train_df, fold_root / "train" / "images", args.use_symlinks)
+        materialize_split(val_df, fold_root / "val" / "images", args.use_symlinks)
 
         print_split_stats(f"fold_{fold_id} | train", train_df)
         print_split_stats(f"fold_{fold_id} | val", val_df)
@@ -311,10 +311,10 @@ def main():
     print(f"- {output_root / 'splits_manifest.csv'}")
     print(f"- {output_root / 'classes.csv'}")
     print("\nEstrutura pronta para treino:")
-    print(f"- {output_root / 'test'}")
+    print(f"- {output_root / 'test' / 'images'}")
     for fold_id in range(args.n_splits):
-        print(f"- {output_root / f'fold_{fold_id}' / 'train'}")
-        print(f"- {output_root / f'fold_{fold_id}' / 'val'}")
+        print(f"- {output_root / f'fold_{fold_id}' / 'train' / 'images'}")
+        print(f"- {output_root / f'fold_{fold_id}' / 'val' / 'images'}")
 
 
 if __name__ == "__main__":

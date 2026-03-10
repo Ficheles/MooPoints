@@ -1,23 +1,13 @@
-"""
-Módulo para Extração de Features Geométricas de Anotações YOLO-Pose.
-
-Este script lê os arquivos de anotação de keypoints no formato YOLO, calcula
-distâncias euclidianas e ângulos entre os pontos-chave definidos, e salva
-o resultado em um arquivo CSV tabular.
-
-Autor: GitHub Copilot
-Data: 2026-03-05
-"""
-
-import os
-import glob
-import numpy as np
-import pandas as pd
+import argparse
+import csv
+import json
+import math
 from pathlib import Path
 
-# --- Constantes e Mapeamentos ---
+import numpy as np
+import pandas as pd
+from ultralytics import YOLO
 
-# Mapeia o índice do keypoint para uma parte anatômica da vaca.
 KEYPOINT_MAP = {
     0: "withers",
     1: "back",
@@ -29,168 +19,296 @@ KEYPOINT_MAP = {
     7: "pin down",
 }
 
-# Pares de pontos para cálculo de distância.
-DISTANCE_PAIRS = [
+POINT_CONNECTIONS = [
     ("withers", "back"),
+    ("withers", "hook up"),
+    ("withers", "hook down"),
+    ("back", "hip"),
     ("back", "hook up"),
+    ("back", "hook down"),
     ("hook up", "hook down"),
+    ("hook up", "hip"),
     ("hook down", "hip"),
     ("hip", "tail head"),
+    ("hook up", "tail head"),
+    ("hook down", "tail head"),
+    ("hook up", "pin up"),
+    ("hook down", "pin down"),
     ("tail head", "pin up"),
+    ("tail head", "pin down"),
     ("pin up", "pin down"),
 ]
 
-# Tripletos de pontos para cálculo de ângulo. O ponto do meio é o vértice.
 ANGLE_TRIPLETS = [
     ("withers", "back", "hook up"),
+    ("withers", "back", "hook down"),
+    ("withers", "hook up", "hook down"),
     ("back", "hook up", "hook down"),
+    ("back", "hook up", "hip"),
+    ("back", "hook down", "hip"),
     ("hook up", "hook down", "hip"),
-    ("hook down", "hip", "tail head"),
-    ("hip", "tail head", "pin up"),
+    ("hook up", "hook down", "tail head"),
+    ("hook up", "tail head", "pin up"),
+    ("hook down", "tail head", "pin down"),
     ("tail head", "pin up", "pin down"),
 ]
 
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
 
-# --- Funções de Cálculo ---
 
-def calculate_distance(p1: np.ndarray, p2: np.ndarray) -> float:
-    """Calcula a distância Euclidiana entre dois pontos."""
-    return np.linalg.norm(p1 - p2)
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=(
+            "Roda predição YOLO pose em data/datasets/classifications, salva payloads em labels e "
+            "extrai features geométricas (distâncias + ângulos de triângulos) para CSV."
+        )
+    )
+    parser.add_argument(
+        "--dataset-root",
+        default="data/datasets/classifications",
+        help="Raiz do dataset de classificação com fold_*/train/images, fold_*/val/images e test/images.",
+    )
+    parser.add_argument(
+        "--model-path",
+        default="models/yolo/best.pt",
+        help="Modelo YOLO Pose para predição de keypoints.",
+    )
+    parser.add_argument(
+        "--output-csv",
+        default="data/datasets/classifications/geometric_features.csv",
+        help="CSV consolidado de features geométricas.",
+    )
+    parser.add_argument(
+        "--conf",
+        type=float,
+        default=0.25,
+        help="Confiança mínima para predição de pose.",
+    )
+    parser.add_argument(
+        "--imgsz",
+        type=int,
+        default=960,
+        help="Tamanho de inferência para predição de pose.",
+    )
+    return parser.parse_args()
 
-def calculate_angle(p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> float:
-    """
-    Calcula o ângulo no vértice p2 formado pelos pontos p1 e p3.
 
-    A fórmula utiliza arctan2 para robustez e o resultado é normalizado
-    para o intervalo [0, 180].
-    """
+def slug(name: str) -> str:
+    return name.replace(" ", "_")
+
+
+def extract_cow_id_from_filename(image_path: Path) -> str:
+    stem = image_path.stem
+    tokens = stem.split("_")
+    if tokens and tokens[0]:
+        return tokens[0]
+    return stem
+
+
+def discover_splits(dataset_root: Path):
+    split_specs = []
+
+    for fold_dir in sorted(dataset_root.glob("fold_*")):
+        if not fold_dir.is_dir():
+            continue
+        for split in ("train", "val"):
+            split_root = fold_dir / split
+            images_dir = split_root / "images" if (split_root / "images").exists() else split_root
+            labels_dir = fold_dir / split / "labels"
+            if images_dir.exists():
+                split_specs.append((fold_dir.name, split, images_dir, labels_dir))
+
+    test_root = dataset_root / "test"
+    test_images = test_root / "images" if (test_root / "images").exists() else test_root
+    test_labels = dataset_root / "test" / "labels"
+    if test_images.exists():
+        split_specs.append(("test", "test", test_images, test_labels))
+
+    return split_specs
+
+
+def list_class_images(images_root: Path):
+    samples = []
+    class_dirs = sorted([d for d in images_root.iterdir() if d.is_dir()])
+    for class_dir in class_dirs:
+        for image_path in class_dir.rglob("*"):
+            if image_path.is_file() and image_path.suffix.lower() in IMAGE_EXTENSIONS:
+                samples.append((image_path, class_dir.name))
+    return samples
+
+
+def serialize_result_payload(result) -> dict:
+    payload = {
+        "boxes": None,
+        "keypoints_xy": None,
+        "keypoints_conf": None,
+    }
+
+    boxes = getattr(result, "boxes", None)
+    if boxes is not None and boxes.xyxy is not None:
+        payload["boxes"] = boxes.xyxy.cpu().numpy().tolist()
+
+    keypoints = getattr(result, "keypoints", None)
+    if keypoints is not None and keypoints.xy is not None:
+        payload["keypoints_xy"] = keypoints.xy.cpu().numpy().tolist()
+
+    if keypoints is not None and keypoints.conf is not None:
+        payload["keypoints_conf"] = keypoints.conf.cpu().numpy().tolist()
+
+    return payload
+
+
+def select_first_keypoints(result) -> np.ndarray:
+    keypoints = getattr(result, "keypoints", None)
+    if keypoints is None or keypoints.xy is None:
+        raise ValueError("no_keypoints")
+
+    points = keypoints.xy.cpu().numpy()
+    if len(points) == 0:
+        raise ValueError("no_keypoints")
+
+    first = points[0]
+    if first.shape[0] < len(KEYPOINT_MAP):
+        raise ValueError("insufficient_keypoints")
+
+    return first[: len(KEYPOINT_MAP)]
+
+
+def distance(p1: np.ndarray, p2: np.ndarray) -> float:
+    return float(np.linalg.norm(p1 - p2))
+
+
+def angle(p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> float:
     v1 = p1 - p2
     v2 = p3 - p2
-    angle = np.degrees(np.arctan2(v2[1], v2[0]) - np.arctan2(v1[1], v1[0]))
-    # Normaliza o ângulo para garantir que seja sempre o menor ângulo (< 180)
-    angle = np.abs(angle)
-    if angle > 180:
-        angle = 360 - angle
-    return angle
+    denom = (np.linalg.norm(v1) * np.linalg.norm(v2))
+    if denom <= 1e-12:
+        return float("nan")
 
-def extract_cow_id_from_filename(filename: str) -> str:
-    """
-    Extrai o ID da vaca a partir do nome do arquivo.
-    Assume o padrão 'cow_id_YYYY_MM_DD...'.
-    """
-    try:
-        # Pega o nome base do arquivo (sem extensão) e divide por '_'
-        base_name = Path(filename).stem
-        cow_id = base_name.split('_')[0]
-        return cow_id
-    except IndexError:
-        # Retorna None se o padrão não for encontrado
-        return None
+    cos_theta = float(np.dot(v1, v2) / denom)
+    cos_theta = max(-1.0, min(1.0, cos_theta))
+    return float(np.degrees(math.acos(cos_theta)))
 
-# --- Processamento Principal ---
 
-def process_yolo_annotations(labels_dir: str) -> pd.DataFrame:
-    """
-    Processa todos os arquivos de anotação em um diretório, extrai features
-    geométricas e retorna um DataFrame consolidado.
-    """
-    # Encontra todos os arquivos de anotação .txt recursivamente
-    search_pattern = os.path.join(labels_dir, 'fold_*', 'labels', '*', '*.txt')
-    annotation_files = glob.glob(search_pattern)
+def triangle_area(p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> float:
+    return float(abs(np.cross(p2 - p1, p3 - p1)) / 2.0)
 
-    if not annotation_files:
-        print(f"Aviso: Nenhum arquivo de anotação encontrado em '{search_pattern}'.")
-        return pd.DataFrame()
 
-    all_features = []
-    
-    print(f"Encontrados {len(annotation_files)} arquivos de anotação. Processando...")
+def build_features_from_keypoints(points: np.ndarray):
+    kp = {KEYPOINT_MAP[i]: points[i] for i in range(len(KEYPOINT_MAP))}
+    features = {}
 
-    for filepath in annotation_files:
-        # Extrai cow_id do nome do arquivo
-        cow_id = extract_cow_id_from_filename(filepath)
-        if cow_id is None:
-            print(f"Aviso: Não foi possível extrair cow_id do arquivo {filepath}. Pulando.")
+    for p1, p2 in POINT_CONNECTIONS:
+        features[f"dist_{slug(p1)}__{slug(p2)}"] = distance(kp[p1], kp[p2])
+
+    for a, b, c in ANGLE_TRIPLETS:
+        area = triangle_area(kp[a], kp[b], kp[c])
+        if area <= 1e-12:
             continue
 
-        with open(filepath, 'r') as f:
-            line = f.readline()
+        features[f"angle_{slug(a)}__{slug(b)}__{slug(c)}_at_{slug(a)}"] = angle(kp[b], kp[a], kp[c])
+        features[f"angle_{slug(a)}__{slug(b)}__{slug(c)}_at_{slug(b)}"] = angle(kp[a], kp[b], kp[c])
+        features[f"angle_{slug(a)}__{slug(b)}__{slug(c)}_at_{slug(c)}"] = angle(kp[a], kp[c], kp[b])
+        features[f"triangle_area_{slug(a)}__{slug(b)}__{slug(c)}"] = area
 
-        parts = line.strip().split(' ')
-        # Os keypoints começam após as 5 primeiras colunas (class, x, y, w, h)
-        keypoints_raw = np.array([float(p) for p in parts[5:]]).reshape(-1, 2)
-
-        # Mapeia os keypoints lidos para um dicionário
-        keypoints = {}
-        for i, name in KEYPOINT_MAP.items():
-            if i < len(keypoints_raw):
-                # Pontos não detectados pelo YOLO são marcados como (0,0).
-                # Substituímos por NaN para tratamento adequado.
-                if np.all(keypoints_raw[i] == 0):
-                    keypoints[name] = np.array([np.nan, np.nan])
-                else:
-                    keypoints[name] = keypoints_raw[i]
-            else:
-                keypoints[name] = np.array([np.nan, np.nan])
-
-        # Calcula as features para a amostra atual
-        features = {'filename': Path(filepath).name, 'cow_id': cow_id}
-
-        # Calcula distâncias
-        for p_name1, p_name2 in DISTANCE_PAIRS:
-            col_name = f"dist_{p_name1}_{p_name2}"
-            p1, p2 = keypoints[p_name1], keypoints[p_name2]
-            if np.isnan(p1).any() or np.isnan(p2).any():
-                features[col_name] = np.nan
-            else:
-                features[col_name] = calculate_distance(p1, p2)
-
-        # Calcula ângulos
-        for p_name1, p_name2, p_name3 in ANGLE_TRIPLETS:
-            col_name = f"angle_{p_name1}_{p_name2}_{p_name3}"
-            p1, p2, p3 = keypoints[p_name1], keypoints[p_name2], keypoints[p_name3]
-            if np.isnan(p1).any() or np.isnan(p2).any() or np.isnan(p3).any():
-                features[col_name] = np.nan
-            else:
-                features[col_name] = calculate_angle(p1, p2, p3)
-
-        all_features.append(features)
-
-    return pd.DataFrame(all_features)
+    return features
 
 
 def main():
-    """
-    Função principal para orquestrar a extração de features e salvar o resultado.
-    """
-    print("Iniciando o script de extração de features geométricas...")
-    
-    # O script está em 'src/', então o diretório 'dataset' está um nível acima.
-    project_root = Path(__file__).parent.parent
-    labels_directory = project_root / 'dataset'
-    output_directory = project_root / 'dataset' / 'data'
-    
-    # Cria o diretório de saída se ele não existir
-    output_directory.mkdir(exist_ok=True)
-    
-    output_csv_path = output_directory / 'geometric_features.csv'
+    args = parse_args()
+    dataset_root = Path(args.dataset_root)
+    model_path = Path(args.model_path)
+    output_csv = Path(args.output_csv)
 
-    # Processa as anotações
-    features_df = process_yolo_annotations(str(labels_directory))
+    if not dataset_root.exists():
+        raise FileNotFoundError(f"Dataset root não encontrado: {dataset_root}")
+    if not model_path.exists():
+        raise FileNotFoundError(f"Modelo YOLO pose não encontrado: {model_path}")
 
-    if not features_df.empty:
-        # Salva o DataFrame em um arquivo CSV
-        features_df.to_csv(output_csv_path, index=False)
-        print("-" * 50)
-        print(f"Processamento concluído com sucesso!")
-        print(f"DataFrame com {features_df.shape[0]} amostras e {features_df.shape[1]} colunas.")
-        print(f"Arquivo de features salvo em: {output_csv_path}")
-        print("Amostra do resultado:")
-        print(features_df.head())
-        print("-" * 50)
-    else:
-        print("Nenhuma feature foi extraída. O arquivo CSV não foi gerado.")
+    split_specs = discover_splits(dataset_root)
+    if not split_specs:
+        raise FileNotFoundError("Nenhum split encontrado. Esperado fold_*/train|val/images e/ou test/images.")
+
+    model = YOLO(str(model_path))
+    rows = []
+    failures = []
+    payload_count = 0
+
+    for fold_name, split_name, images_dir, labels_dir in split_specs:
+        labels_dir.mkdir(parents=True, exist_ok=True)
+        samples = list_class_images(images_dir)
+
+        for image_path, class_name in samples:
+            cow_id = extract_cow_id_from_filename(image_path)
+            rel = image_path.relative_to(images_dir)
+            payload_path = labels_dir / rel.with_suffix(".json")
+            payload_path.parent.mkdir(parents=True, exist_ok=True)
+
+            results = model.predict(
+                source=str(image_path),
+                task="pose",
+                conf=args.conf,
+                imgsz=args.imgsz,
+                verbose=False,
+            )
+
+            if not results:
+                failures.append({
+                    "image_path": str(image_path),
+                    "fold": fold_name,
+                    "split": split_name,
+                    "reason": "no_result",
+                })
+                continue
+
+            result = results[0]
+            payload = serialize_result_payload(result)
+            payload_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            payload_count += 1
+
+            try:
+                points = select_first_keypoints(result)
+                features = build_features_from_keypoints(points)
+            except ValueError as exc:
+                failures.append({
+                    "image_path": str(image_path),
+                    "fold": fold_name,
+                    "split": split_name,
+                    "reason": str(exc),
+                })
+                continue
+
+            rows.append(
+                {
+                    "image_path": str(image_path.resolve()),
+                    "payload_path": str(payload_path.resolve()),
+                    "fold": fold_name,
+                    "split": split_name,
+                    "class_name": class_name,
+                    "cow_id": cow_id,
+                    **features,
+                }
+            )
+
+    if not rows:
+        raise RuntimeError("Nenhuma feature foi extraída. Verifique modelo e imagens.")
+
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    df = pd.DataFrame(rows)
+    df.to_csv(output_csv, index=False, quoting=csv.QUOTE_MINIMAL)
+
+    print("=" * 70)
+    print("Extração geométrica concluída")
+    print(f"- modelo: {model_path}")
+    print(f"- payloads salvos: {payload_count}")
+    print(f"- linhas no CSV: {len(df)}")
+    print(f"- falhas: {len(failures)}")
+    print(f"- output_csv: {output_csv}")
+    if failures:
+        sample = failures[0]
+        print(f"- exemplo falha: {sample['image_path']} :: {sample['reason']}")
+    print("=" * 70)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

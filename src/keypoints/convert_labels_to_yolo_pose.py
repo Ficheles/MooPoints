@@ -21,7 +21,7 @@ def parse_args():
     )
     parser.add_argument(
         "--dataset-root",
-        default="/app/dataset",
+        default="data/datasets/keypoints",
         help="Diretório raiz contendo fold_*/labels/*/*.json",
     )
     return parser.parse_args()

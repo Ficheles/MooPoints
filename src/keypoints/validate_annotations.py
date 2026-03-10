@@ -8,7 +8,7 @@ KEYPOINTS_REQ = [
 ]
 
 
-BASE_DIR = Path("fotos_anotadas/00_dataset")
+BASE_DIR = Path("data/fotos_anotadas/00_dataset")
 
 def validate_annotations():
     print(f"Validando anotações em: {BASE_DIR}")

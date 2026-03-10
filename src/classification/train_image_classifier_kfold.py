@@ -10,11 +10,11 @@ from ultralytics import YOLO
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Treina classificador de imagem com K-Fold em dataset_classification/fold_*.",
+        description="Treina classificador de imagem com K-Fold em data/datasets/classifications/fold_*.",
     )
     parser.add_argument(
         "--dataset-root",
-        default=os.getenv("DATASET_CLASSIFICATION_ROOT", "dataset_classification"),
+        default=os.getenv("DATASET_CLASSIFICATION_ROOT", "data/datasets/classifications"),
         help="Diretório raiz contendo fold_*/train e fold_*/val.",
     )
     parser.add_argument(
