@@ -55,15 +55,15 @@ Para entender arquitetura, fluxos de treino/inferência e a integração API + S
 
 ## Capturas da Interface
 
-Na interface Streamlit, o uso é simples: você envia a foto da vaca, a aplicação chama a API para processar a imagem e o sistema retorna se a vaca foi reconhecida (ou não), com classe prevista e confiança/similaridade.
+O sistema funciona assim:
 
-Fluxo resumido da predição:
+- Você abre a interface no Streamlit e envia uma foto da vaca.
+- O Streamlit manda essa imagem para a API, que faz a análise automaticamente.
+- A API detecta os keypoints, extrai as características geométricas e roda a predição no modelo treinado.
+- O resultado volta para a tela com status (reconhecida ou desconhecida), classe prevista e nível de confiança/similaridade.
+- Se ativado, a interface também mostra a imagem anotada para facilitar a validação visual.
 
-1. Upload da imagem na interface.
-2. Envio para o endpoint `POST /cows/classify`.
-3. Detecção de keypoints + extração de features geométricas.
-4. Predição com o modelo XGBoost.
-5. Exibição amigável do resultado no painel da interface.
+Na prática, é um fluxo “enviei a foto → o sistema analisa → recebo a resposta clara na tela”, pensado para ser rápido e fácil de usar.
 
 Interface do sistema em **Streamlit** realizando a predição via **API FastAPI** (`POST /cows/classify`), com painel de resultado e similaridade:
 
@@ -112,3 +112,10 @@ Para parar:
 ```bash
 docker compose down
 ```
+
+## 👥 Equipe
+
+|                           Foto                           | Nome               | GitHub                                       |
+| :------------------------------------------------------: | :----------------- | :------------------------------------------- |
+|   ![ficheles](https://github.com/ficheles.png?size=50)   | **Rafael Fideles** | [@Ficheles](https://github.com/ficheles)     |
+| ![ronenfilho](https://github.com/ronenfilho.png?size=50) | **Ronen Filho**    | [@ronenfilho](https://github.com/ronenfilho) |

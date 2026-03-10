@@ -16,8 +16,7 @@ services:
       YOLO_CONFIG_DIR: /app/.ultralytics
     volumes:
       - ./fotos_anotadas:/app/fotos_anotadas
-      - ./dataset:/app/dataset
-      - ./dataset_samples:/app/dataset_samples
+      - ./data/datasets:/app/datasets
       - ./models:/app/models
       - ./.ultralytics:/app/.ultralytics
       - ./src:/app/src
