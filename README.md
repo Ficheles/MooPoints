@@ -21,16 +21,17 @@ Este repositório possui fluxos principais:
 
 ## Estrutura principal
 
-- `src/keypoints/prepare_dataset.py`: organiza arquivos, cria links em `fotos_anotadas/00_dataset` e gera folds em `dataset/` mantendo labels originais em `.json`.
+- `src/keypoints/prepare_dataset.py`: organiza arquivos a partir de `data/fotos_anotadas/00_dataset` e gera folds em `data/datasets/keypoints` mantendo labels originais em `.json`.
 - `src/keypoints/validate_annotations.py`: valida as anotações no diretório preparado.
 - `src/keypoints/key_point_detection_cow.py`: executa detecção + pose usando modelos YOLO.
 - `src/keypoints/convert_labels_to_yolo_pose.py`: lê labels `.json` (Label Studio) e gera labels `.txt` no formato YOLO Pose.
-- `src/keypoints/train_yolo_kfold.py`: treina YOLO Pose usando os folds já prontos em `dataset/`.
-- `src/classification/prepare_classification_dataset.py`: organiza `fotos_classificar` em `dataset_classification` com teste estratificado (10%) e 5 folds train/val sem vazamento por `session_id`.
-- `src/classification/generate_geometric_features_from_dataset.py`: usa modelo YOLO pose para gerar automaticamente keypoints/features geométricas a partir de `dataset_classification`.
+- `src/keypoints/train_yolo_kfold.py`: treina YOLO Pose usando os folds já prontos em `data/datasets/keypoints`.
+- `src/classification/prepare_classification_dataset.py`: organiza `data/fotos_classificar` em `data/datasets/classifications` com teste estratificado (10%) e 5 folds train/val sem vazamento por `session_id`.
+- `src/classification/generate_geometric_features_from_dataset.py`: usa modelo YOLO pose para gerar automaticamente keypoints/features geométricas a partir de `data/datasets/classifications`.
+- `src/classification/extract_geometric_features.py`: roda YOLO Pose por imagem, salva payloads em `labels` e gera CSV com distâncias/ângulos/áreas triangulares.
 - `src/classification/train_xgboost_classifier.py`: treina classificador XGBoost com as features, salva artefatos e limiar de desconhecida.
-- `src/classification/train_image_classifier_kfold.py`: treina classificador por imagem em `dataset_classification/fold_*`.
-- `src/classification/evaluate_image_classifier.py`: avalia checkpoint treinado no conjunto `dataset_classification/test`.
+- `src/classification/train_image_classifier_kfold.py`: treina classificador por imagem em `data/datasets/classifications/fold_*`.
+- `src/classification/evaluate_image_classifier.py`: avalia checkpoint treinado no conjunto `data/datasets/classifications/test/images`.
 - `src/classification/inference_image_classifier.py`: classifica uma imagem em uma das classes treinadas.
 - `docker-compose.yml`: execução do projeto em container.
 
@@ -88,15 +89,15 @@ python -m src.keypoints.predict_keypoints_from_image \
 ### 4) Converter labels para YOLO Pose (obrigatório antes do treino)
 
 ```bash
-python src/keypoints/convert_labels_to_yolo_pose.py --dataset-root /app/dataset
+python src/keypoints/convert_labels_to_yolo_pose.py --dataset-root data/datasets/keypoints
 ```
 
 ### 5) Treinar com K-Fold (transfer learning)
 
 ```bash
 python src/keypoints/train_yolo_kfold.py \
-	--dataset-root /app/dataset \
-	--models-dir /app/models \
+	--dataset-root data/datasets/keypoints \
+	--models-dir models/yolo \
 	--base-model yolo11x-pose.pt \
 	--epochs 100 \
 	--batch 8 \
@@ -112,7 +113,7 @@ python src/keypoints/train_yolo_kfold.py --continue-from-best
 
 O relatório consolidado é salvo em:
 
-- `/app/runs/kfold_pose/kfold_metrics_report.json`
+- `runs/kfold_pose/kfold_metrics_report.json`
 
 ### 6) Executar API FastAPI
 
@@ -177,12 +178,12 @@ Recursos de UX da tela:
 
 Este é o fluxo principal para produção: **YOLO pose → features geométricas → XGBoost → API/Streamlit**.
 
-#### Estrutura esperada de entrada (`fotos_classificar`)
+#### Estrutura esperada de entrada (`data/fotos_classificar`)
 
 Formato recomendado (uma pasta por vaca/classe):
 
 ```text
-fotos_classificar/
+data/fotos_classificar/
 ├── cow_01/
 │   ├── 20260101_040807_baia16_IPC1_001.jpg
 │   └── ...
@@ -193,12 +194,12 @@ fotos_classificar/
 		└── ...
 ```
 
-#### 7.1 Gerar `dataset_classification` com split sem vazamento por sessão
+#### 7.1 Gerar `data/datasets/classifications` com split sem vazamento por sessão
 
 ```bash
 python src/classification/prepare_classification_dataset.py \
-	--input-root fotos_classificar \
-	--output-root dataset_classification \
+	--input-root data/fotos_classificar \
+	--output-root data/datasets/classifications \
 	--test-size 0.10 \
 	--n-splits 5 \
 	--clean-output
@@ -207,20 +208,20 @@ python src/classification/prepare_classification_dataset.py \
 Resultado:
 
 ```text
-dataset_classification/
+data/datasets/classifications/
 ├── classes.csv
 ├── splits_manifest.csv
 ├── test/
-│   ├── cow_01/*.jpg
+│   ├── images/cow_01/*.jpg
 │   ├── ...
-│   └── cow_30/*.jpg
+│   └── images/cow_30/*.jpg
 ├── fold_0/
-│   ├── train/cow_01/*.jpg ... cow_30/*.jpg
-│   └── val/cow_01/*.jpg ... cow_30/*.jpg
+│   ├── train/images/cow_01/*.jpg ... cow_30/*.jpg
+│   └── val/images/cow_01/*.jpg ... cow_30/*.jpg
 ...
 └── fold_4/
-		├── train/cow_01/*.jpg ... cow_30/*.jpg
-		└── val/cow_01/*.jpg ... cow_30/*.jpg
+		├── train/images/cow_01/*.jpg ... cow_30/*.jpg
+		└── val/images/cow_01/*.jpg ... cow_30/*.jpg
 ```
 
 Observações:
@@ -228,31 +229,31 @@ Observações:
 - O teste usa 10% estratificado por classe e sem misturar `session_id` com os folds de desenvolvimento.
 - Os 90% restantes são divididos em 5 folds (`train`/`val`) também sem vazamento por `session_id`.
 
-#### 7.2 Gerar features geométricas automaticamente com o modelo de pose
+#### 7.2 Gerar labels + features geométricas automaticamente com o modelo de pose
 
-Use o `best.pt` de pose já treinado para anotar implicitamente as imagens (inferência de keypoints) e gerar o CSV de features:
+Use o `best.pt` de pose já treinado para inferir keypoints em cada imagem, salvar payloads JSON em `labels` e gerar o CSV de features:
 
 ```bash
-python src/classification/generate_geometric_features_from_dataset.py \
-	--dataset-root dataset_classification \
-	--fold 0 \
-	--model-path models/yolo11x-pose.pt \
-	--output-csv dataset_classification/geometric_features.csv
+python -m src.classification.extract_geometric_features \
+	--dataset-root data/datasets/classifications \
+	--model-path models/yolo/best.pt \
+	--output-csv data/datasets/classifications/geometric_features.csv
 ```
 
 Saída:
 
-- `dataset_classification/geometric_features.csv`
+- `data/datasets/classifications/geometric_features.csv`
+- payloads em `data/datasets/classifications/**/labels/**/*.json`
 
 #### 7.3 Treinar XGBoost com as features
 
 ```bash
 python src/classification/train_xgboost_classifier.py \
-	--features-csv dataset_classification/geometric_features.csv \
-	--models-dir models
+	--features-csv data/datasets/classifications/geometric_features.csv \
+	--models-dir models/xgboost
 ```
 
-Artefatos gerados em `models/`:
+Artefatos gerados em `models/xgboost/`:
 
 - `xgboost_cow_id.pkl`
 - `xgb_label_encoder.pkl`
@@ -300,8 +301,8 @@ Os scripts abaixo continuam disponíveis para o fluxo de classificador de imagem
 
 ```bash
 python src/classification/train_image_classifier_kfold.py \
-	--dataset-root dataset_classification \
-	--models-dir models \
+	--dataset-root data/datasets/classifications \
+	--models-dir models/yolo \
 	--base-model yolo11n-cls.pt \
 	--epochs 50 \
 	--batch 16 \
@@ -325,7 +326,7 @@ python src/classification/inference_image_classifier.py \
 
 ```bash
 python src/classification/evaluate_image_classifier.py \
-	--test-root dataset_classification/test \
+	--test-root data/datasets/classifications/test/images \
 	--model-path runs/kfold_classification/cls_fold_0/weights/best.pt \
 	--output-json runs/kfold_classification/test_metrics_fold0.json
 ```
@@ -334,22 +335,22 @@ python src/classification/evaluate_image_classifier.py \
 
 Esse script:
 
-- Carrega uma imagem de entrada (`/app/dataset_samples/person.png`).
+- Carrega uma imagem de entrada (`dataset_samples/person.png`).
 - Usa dois modelos:
   - detecção (`yolo26n.pt`)
   - pose (`yolo26n-pose.pt`)
 - Desenha caixa e esqueleto dos keypoints.
-- Salva a saída em `/app/dataset_samples/person-pose_with_skeleton.png`.
+- Salva a saída em `dataset_samples/person-pose_with_skeleton.png`.
 
 Os nomes dos modelos são configuráveis por variáveis de ambiente:
 
-- `MODEL_DIR` (padrão `/app/models`)
+- `MODEL_DIR` (padrão `models/yolo`)
 - `DETECTION_MODEL_NAME` (padrão `yolo26n.pt`)
 - `POSE_MODEL_NAME` (padrão `yolo26n-pose.pt`)
 
 ## Sobre o script `train_yolo_kfold.py`
 
-Esse script foi feito para treinar em cima do dataset já separado por folds (`dataset/fold_*`) com `images/` e `labels/`.
+Esse script foi feito para treinar em cima do dataset já separado por folds (`data/datasets/keypoints/fold_*`) com `images/` e `labels/`.
 
 > Antes do treino, execute `convert_labels_to_yolo_pose.py` para transformar os `.json` em `.txt` no formato esperado pelo YOLO.
 
@@ -361,16 +362,16 @@ O script de conversão:
 Ele faz automaticamente:
 
 - Busca dos `data_fold_*.yaml` em cada fold.
-- Treino por fold com transfer learning a partir de um modelo base em `/app/models`.
+- Treino por fold com transfer learning a partir de um modelo base em `models/yolo`.
 - Registro das métricas por fold (box e pose).
 - Salvamento do melhor e último checkpoint (`best.pt` e `last.pt`).
 - Geração de relatório consolidado com estatísticas.
 
 Principais variáveis/opções:
 
-- `MODEL_DIR` (padrão `/app/models`)
+- `MODEL_DIR` (padrão `models/yolo`)
 - `TRAIN_MODEL_NAME` (padrão `yolo26n-pose.pt`)
-- `DATASET_ROOT` (padrão `/app/dataset`)
+- `DATASET_ROOT` (padrão `data/datasets/keypoints`)
 - `CONTINUE_FROM_BEST=true` para retomar do `best.pt`
 
 Template de métricas geradas pelo relatório (estrutura):
@@ -430,7 +431,7 @@ Dentro do container, por exemplo:
 python src/keypoints/prepare_dataset.py
 python src/keypoints/validate_annotations.py
 python src/keypoints/key_point_detection_cow.py
-python src/keypoints/convert_labels_to_yolo_pose.py --dataset-root /app/dataset
+python src/keypoints/convert_labels_to_yolo_pose.py --dataset-root data/datasets/keypoints
 python src/keypoints/train_yolo_kfold.py --epochs 50 --continue-from-best
 ```
 
