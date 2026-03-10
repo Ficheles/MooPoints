@@ -65,6 +65,26 @@ python src/keypoints/validate_annotations.py
 python src/keypoints/key_point_detection_cow.py
 ```
 
+### 3.1) Predizer keypoints de uma imagem com `best.pt`
+
+Use o script de predição por imagem informando o caminho da imagem:
+
+```bash
+python -m src.keypoints.predict_keypoints_from_image \
+	--image-path /caminho/para/imagem.jpg \
+	--model-path models/yolo/best.pt
+```
+
+Para salvar também JSON e imagem anotada:
+
+```bash
+python -m src.keypoints.predict_keypoints_from_image \
+	--image-path /caminho/para/imagem.jpg \
+	--model-path models/yolo/best.pt \
+	--save-json outputs/keypoints.json \
+	--save-image outputs/keypoints_annotated.jpg
+```
+
 ### 4) Converter labels para YOLO Pose (obrigatório antes do treino)
 
 ```bash

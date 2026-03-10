@@ -1,11 +1,14 @@
 import argparse
+import json
+from collections import Counter
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from ultralytics import YOLO
 
-from src.classification.inference_pipeline import ANGLE_TRIPLETS, DISTANCE_PAIRS, KEYPOINT_MAP, calculate_angle, calculate_distance
+from src.classification.inference_pipeline import KEYPOINT_MAP, build_feature_dict
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
 
@@ -19,11 +22,16 @@ def parse_args():
     )
     parser.add_argument("--dataset-root", default="dataset_classification", help="Diretório raiz do dataset de classificação.")
     parser.add_argument("--fold", type=int, default=0, help="Fold a utilizar para train/val (padrão: 0).")
-    parser.add_argument("--model-path", default="models/yolo11x-pose.pt", help="Modelo YOLO pose para extração de keypoints.")
+    parser.add_argument("--model-path", default="models/yolo/yolo11x-pose.pt", help="Modelo YOLO pose para extração de keypoints.")
     parser.add_argument(
         "--output-csv",
         default="dataset_classification/geometric_features.csv",
         help="CSV de saída com as features geométricas.",
+    )
+    parser.add_argument(
+        "--output-report",
+        default="dataset_classification/geometric_features_report.json",
+        help="JSON de relatório do processo de extração.",
     )
     return parser.parse_args()
 
@@ -65,16 +73,7 @@ def extract_keypoints(model: YOLO, image_path: Path) -> np.ndarray:
 
 
 def keypoints_to_features(keypoints: np.ndarray) -> dict[str, float]:
-    keypoint_map = {KEYPOINT_MAP[i]: keypoints[i] for i in range(len(KEYPOINT_MAP))}
-
-    features = {}
-    for p1, p2 in DISTANCE_PAIRS:
-        features[f"dist_{p1}_{p2}"] = float(calculate_distance(keypoint_map[p1], keypoint_map[p2]))
-
-    for p1, p2, p3 in ANGLE_TRIPLETS:
-        features[f"angle_{p1}_{p2}_{p3}"] = float(calculate_angle(keypoint_map[p1], keypoint_map[p2], keypoint_map[p3]))
-
-    return features
+    return build_feature_dict(keypoints)
 
 
 def main():
@@ -83,6 +82,7 @@ def main():
     dataset_root = Path(args.dataset_root)
     model_path = Path(args.model_path)
     output_csv = Path(args.output_csv)
+    output_report = Path(args.output_report)
 
     if not dataset_root.exists():
         raise FileNotFoundError(f"Dataset root não encontrado: {dataset_root}")
@@ -101,6 +101,12 @@ def main():
 
     rows = []
     failures = []
+    split_totals = {
+        "train": len(train_items),
+        "val": len(val_items),
+        "test": len(test_items),
+    }
+    split_success = {"train": 0, "val": 0, "test": 0}
 
     for split_name, items in (("train", train_items), ("val", val_items), ("test", test_items)):
         for image_path, class_name in items:
@@ -115,8 +121,16 @@ def main():
                         **features,
                     }
                 )
+                split_success[split_name] += 1
             except ValueError as exc:
-                failures.append((str(image_path), str(exc)))
+                failures.append(
+                    {
+                        "image_path": str(image_path.resolve()),
+                        "class_name": class_name,
+                        "split": split_name,
+                        "reason": str(exc),
+                    }
+                )
 
     if not rows:
         raise RuntimeError("Nenhuma feature válida foi gerada.")
@@ -125,15 +139,44 @@ def main():
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_csv, index=False)
 
+    failure_reasons = Counter(item["reason"] for item in failures)
+    split_stats = {
+        split: {
+            "total_images": split_totals[split],
+            "success": split_success[split],
+            "failures": split_totals[split] - split_success[split],
+        }
+        for split in ("train", "val", "test")
+    }
+
+    report = {
+        "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "dataset_root": str(dataset_root.resolve()),
+        "model_path": str(model_path.resolve()),
+        "output_csv": str(output_csv.resolve()),
+        "rows_generated": int(len(df)),
+        "feature_count": int(len(df.columns) - 3),
+        "splits": split_stats,
+        "failures": {
+            "total": int(len(failures)),
+            "by_reason": {reason: int(count) for reason, count in failure_reasons.items()},
+            "samples": failures[:20],
+        },
+    }
+
+    output_report.parent.mkdir(parents=True, exist_ok=True)
+    output_report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
     print("=" * 70)
     print("Geração de features geométricas concluída")
     print(f"- output_csv: {output_csv}")
+    print(f"- output_report: {output_report}")
     print(f"- linhas geradas: {len(df)}")
     print(f"- falhas: {len(failures)}")
     if failures:
         print("- exemplo de falha:")
         sample = failures[0]
-        print(f"  - {sample[0]} :: {sample[1]}")
+        print(f"  - {sample['image_path']} :: {sample['reason']}")
     print("=" * 70)
 
 

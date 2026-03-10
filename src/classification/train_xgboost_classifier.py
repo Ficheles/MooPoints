@@ -18,7 +18,7 @@ def parse_args():
         default="dataset_classification/geometric_features.csv",
         help="CSV com features geométricas e colunas class_name/split.",
     )
-    parser.add_argument("--models-dir", default="models", help="Diretório de saída dos artefatos do modelo.")
+    parser.add_argument("--models-dir", default="models/xgboost", help="Diretório de saída dos artefatos do modelo.")
     parser.add_argument(
         "--unknown-threshold",
         type=float,
@@ -136,18 +136,22 @@ def main():
     val_metrics = evaluate(model, label_encoder, imputer, feat_cols, val_df)
     test_metrics = evaluate(model, label_encoder, imputer, feat_cols, test_df)
 
-    joblib.dump(model, models_dir / "xgboost_cow_id.pkl")
-    joblib.dump(label_encoder, models_dir / "xgb_label_encoder.pkl")
-    joblib.dump(imputer, models_dir / "xgb_imputer.pkl")
+    def save_artifacts(target_dir: Path) -> None:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        joblib.dump(model, target_dir / "xgboost_cow_id.pkl")
+        joblib.dump(label_encoder, target_dir / "xgb_label_encoder.pkl")
+        joblib.dump(imputer, target_dir / "xgb_imputer.pkl")
 
-    (models_dir / "xgb_feature_columns.json").write_text(
-        json.dumps({"feature_columns": feat_cols}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    (models_dir / "xgb_unknown_threshold.json").write_text(
-        json.dumps({"unknown_threshold": threshold}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+        (target_dir / "xgb_feature_columns.json").write_text(
+            json.dumps({"feature_columns": feat_cols}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        (target_dir / "xgb_unknown_threshold.json").write_text(
+            json.dumps({"unknown_threshold": threshold}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    save_artifacts(models_dir)
 
     report = {
         "features_csv": str(features_csv.resolve()),

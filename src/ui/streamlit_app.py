@@ -3,7 +3,7 @@ from typing import Any
 
 import requests
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageDraw
 
 
 st.set_page_config(
@@ -68,13 +68,23 @@ def api_get(base_url: str, endpoint: str, timeout: int = 30) -> tuple[bool, Any]
         return False, str(exc)
 
 
-def api_identify(base_url: str, image_bytes: bytes, filename: str, threshold: float, timeout: int = 60) -> tuple[bool, Any]:
+def api_identify(
+    base_url: str,
+    image_bytes: bytes,
+    filename: str,
+    threshold: float,
+    include_keypoints: bool,
+    timeout: int = 60,
+) -> tuple[bool, Any]:
     files = {"image": (filename, image_bytes, "image/jpeg")}
     try:
         response = requests.post(
             f"{base_url}/cows/classify",
             files=files,
-            params={"confidence_threshold": threshold},
+            params={
+                "confidence_threshold": threshold,
+                "include_keypoints": include_keypoints,
+            },
             timeout=timeout,
         )
         response.raise_for_status()
@@ -99,11 +109,12 @@ def api_get_reference_image(base_url: str, cow_id: int, timeout: int = 30) -> tu
         return False, str(exc)
 
 
-def sidebar_settings() -> tuple[str, float, int]:
+def sidebar_settings() -> tuple[str, float, int, bool]:
     st.sidebar.title("⚙️ Configurações")
     base_url = st.sidebar.text_input("URL da API", value="http://localhost:8000").rstrip("/")
     threshold = st.sidebar.slider("Limiar de similaridade", min_value=0.50, max_value=0.999, value=0.98, step=0.005)
     timeout = st.sidebar.slider("Timeout (segundos)", min_value=10, max_value=180, value=60, step=5)
+    show_keypoints = st.sidebar.checkbox("Exibir keypoints na imagem", value=False)
 
     st.sidebar.markdown("---")
     st.sidebar.caption("Fluxo: envia foto → endpoint /cows/classify → retorna classe conhecida ou desconhecida.")
@@ -116,7 +127,32 @@ def sidebar_settings() -> tuple[str, float, int]:
         else:
             st.sidebar.error(f"Falha na conexão: {payload}")
 
-    return base_url, threshold, timeout
+    return base_url, threshold, timeout, show_keypoints
+
+
+def draw_keypoints_overlay(
+    image: Image.Image,
+    keypoints: list[list[float]] | None,
+    keypoint_names: list[str] | None,
+) -> Image.Image:
+    if not keypoints:
+        return image
+
+    canvas = image.convert("RGB").copy()
+    draw = ImageDraw.Draw(canvas)
+
+    for idx, point in enumerate(keypoints):
+        if len(point) < 2:
+            continue
+        x, y = float(point[0]), float(point[1])
+        r = 5
+        draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 80, 80), outline=(255, 255, 255), width=1)
+
+        if keypoint_names and idx < len(keypoint_names):
+            label = keypoint_names[idx]
+            draw.text((x + 6, y - 8), label, fill=(255, 255, 0))
+
+    return canvas
 
 
 def friendly_reason(reason: str | None) -> tuple[str, str]:
@@ -151,7 +187,7 @@ def friendly_reason(reason: str | None) -> tuple[str, str]:
 
 def main() -> None:
     inject_styles()
-    base_url, threshold, timeout = sidebar_settings()
+    base_url, threshold, timeout, show_keypoints = sidebar_settings()
 
     st.markdown(
         """
@@ -187,6 +223,7 @@ def main() -> None:
                         image_bytes=image_bytes,
                         filename=uploaded.name,
                         threshold=threshold,
+                        include_keypoints=show_keypoints,
                         timeout=timeout,
                     )
 
@@ -196,6 +233,7 @@ def main() -> None:
 
                 st.session_state["last_result"] = payload
                 st.session_state["last_base_url"] = base_url
+                st.session_state["last_uploaded_image"] = image_bytes
 
     with col_right:
         st.markdown("<div class='result-card'>", unsafe_allow_html=True)
@@ -214,6 +252,8 @@ def main() -> None:
         matched_id = result.get("predicted_class")
         used_threshold = result.get("threshold")
         reason = result.get("reason")
+        result_keypoints = result.get("keypoints")
+        result_keypoint_names = result.get("keypoint_names")
 
         m1, m2 = st.columns(2)
         with m1:
@@ -244,6 +284,15 @@ def main() -> None:
             if reason:
                 st.caption(f"Motivo técnico: `{reason}`")
             st.caption(f"Limiar aplicado: {used_threshold}")
+
+        if show_keypoints:
+            image_bytes = st.session_state.get("last_uploaded_image")
+            if image_bytes and result_keypoints:
+                source_img = Image.open(io.BytesIO(image_bytes))
+                annotated = draw_keypoints_overlay(source_img, result_keypoints, result_keypoint_names)
+                st.image(annotated, caption="Imagem com keypoints usados na classificação", use_container_width=True)
+            else:
+                st.caption("Keypoints não disponíveis no resultado atual. Execute uma nova classificação com a opção ativa.")
 
         st.markdown("</div>", unsafe_allow_html=True)
 

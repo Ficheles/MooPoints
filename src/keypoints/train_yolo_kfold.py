@@ -20,7 +20,7 @@ def parse_args():
     )
     parser.add_argument(
         "--models-dir",
-        default=os.getenv("MODEL_DIR", "/app/models"),
+        default=os.getenv("MODEL_DIR", "/app/models/yolo"),
         help="Diretório com pesos base de transfer learning",
     )
     parser.add_argument(

@@ -4,7 +4,7 @@ from ultralytics import YOLO
 
 IMAGE_PATH = "/app/dataset_samples/person.png"
 SAVE_PATH = "/app/dataset_samples/person-pose_with_skeleton.png"
-MODEL_DIR = os.getenv("MODEL_DIR", "/app/models")
+MODEL_DIR = os.getenv("MODEL_DIR", "/app/models/yolo")
 DETECTION_MODEL_NAME = os.getenv("DETECTION_MODEL_NAME", "yolo11x.pt")
 POSE_MODEL_NAME = os.getenv("POSE_MODEL_NAME", "yolo11x-pose.pt")
 DETECTION_MODEL = os.path.join(MODEL_DIR, DETECTION_MODEL_NAME)

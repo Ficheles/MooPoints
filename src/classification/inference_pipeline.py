@@ -64,6 +64,75 @@ def calculate_angle(p1, p2, p3):
         angle = 360 - angle
     return angle
 
+
+def _slug(name: str) -> str:
+    return name.replace(" ", "_")
+
+
+def build_feature_dict(keypoints: np.ndarray) -> dict[str, float]:
+    required_kpts = len(KEYPOINT_MAP)
+    if keypoints.shape[0] < required_kpts:
+        raise ValueError(f"Esperava {required_kpts} pontos-chave, mas recebeu {keypoints.shape[0]}")
+
+    keypoints = keypoints[:required_kpts]
+    keypoint_map = {KEYPOINT_MAP[i]: keypoints[i] for i in range(required_kpts)}
+    ordered_names = [KEYPOINT_MAP[i] for i in range(required_kpts)]
+
+    features: dict[str, float] = {}
+
+    for p_name1, p_name2 in DISTANCE_PAIRS:
+        features[f"dist_{p_name1}_{p_name2}"] = float(calculate_distance(keypoint_map[p_name1], keypoint_map[p_name2]))
+
+    for p_name1, p_name2, p_name3 in ANGLE_TRIPLETS:
+        features[f"angle_{p_name1}_{p_name2}_{p_name3}"] = float(calculate_angle(keypoint_map[p_name1], keypoint_map[p_name2], keypoint_map[p_name3]))
+
+    for i in range(required_kpts):
+        for j in range(i + 1, required_kpts):
+            n1 = ordered_names[i]
+            n2 = ordered_names[j]
+            col = f"dist_pair_{_slug(n1)}_{_slug(n2)}"
+            features[col] = float(calculate_distance(keypoint_map[n1], keypoint_map[n2]))
+
+    xs = keypoints[:, 0]
+    ys = keypoints[:, 1]
+    x_min, x_max = float(np.min(xs)), float(np.max(xs))
+    y_min, y_max = float(np.min(ys)), float(np.max(ys))
+    bbox_w = float(x_max - x_min)
+    bbox_h = float(y_max - y_min)
+    bbox_diag = float(np.hypot(bbox_w, bbox_h))
+    bbox_area = float(max(0.0, bbox_w * bbox_h))
+    bbox_aspect = float(bbox_w / (bbox_h + 1e-6))
+
+    centroid = np.array([float(np.mean(xs)), float(np.mean(ys))], dtype=float)
+    dists_centroid = np.linalg.norm(keypoints - centroid, axis=1)
+
+    features["kp_bbox_w"] = bbox_w
+    features["kp_bbox_h"] = bbox_h
+    features["kp_bbox_diag"] = bbox_diag
+    features["kp_bbox_area"] = bbox_area
+    features["kp_bbox_aspect"] = bbox_aspect
+    features["kp_centroid_x"] = float(centroid[0])
+    features["kp_centroid_y"] = float(centroid[1])
+    features["kp_dist_centroid_mean"] = float(np.mean(dists_centroid))
+    features["kp_dist_centroid_std"] = float(np.std(dists_centroid))
+    features["kp_dist_centroid_min"] = float(np.min(dists_centroid))
+    features["kp_dist_centroid_max"] = float(np.max(dists_centroid))
+
+    norm_ref = bbox_diag + 1e-6
+    for p_name1, p_name2 in DISTANCE_PAIRS:
+        base_col = f"dist_{p_name1}_{p_name2}"
+        features[f"{base_col}_norm_diag"] = float(features[base_col] / norm_ref)
+
+    for i in range(required_kpts - 1):
+        n1 = ordered_names[i]
+        n2 = ordered_names[i + 1]
+        p1 = keypoint_map[n1]
+        p2 = keypoint_map[n2]
+        theta = float(np.degrees(np.arctan2(p2[1] - p1[1], p2[0] - p1[0])))
+        features[f"orient_{_slug(n1)}_{_slug(n2)}"] = theta
+
+    return features
+
 # --- Classe do Pipeline ---
 class InferencePipeline:
     def __init__(self, yolo_model_path, xgb_model_path, encoder_path):
@@ -77,16 +146,7 @@ class InferencePipeline:
         """Extrai features geométricas a partir das coordenadas dos keypoints."""
         if keypoints_data.shape[1] < 8:
              raise ValueError(f"Esperava 8 pontos-chave, mas recebeu {keypoints_data.shape[1]}")
-
-        keypoints = {KEYPOINT_MAP[i]: coord for i, coord in enumerate(keypoints_data[0])}
-        
-        features = {}
-        for p_name1, p_name2 in DISTANCE_PAIRS:
-            features[f"dist_{p_name1}_{p_name2}"] = calculate_distance(keypoints[p_name1], keypoints[p_name2])
-        
-        for p_name1, p_name2, p_name3 in ANGLE_TRIPLETS:
-            features[f"angle_{p_name1}_{p_name2}_{p_name3}"] = calculate_angle(keypoints[p_name1], keypoints[p_name2], keypoints[p_name3])
-
+        features = build_feature_dict(keypoints_data[0])
         return pd.DataFrame([features])
 
     def predict(self, image_path):

@@ -30,20 +30,21 @@ from src.classification.inference_pipeline import (
     ANGLE_TRIPLETS,
     DISTANCE_PAIRS,
     KEYPOINT_MAP,
+    build_feature_dict,
     calculate_angle,
     calculate_distance,
 )
 
 
 PROJECT_ROOT = Path(__file__).parent.parent
-MODEL_PATH = PROJECT_ROOT / "models" / "yolo11x-pose.pt"
+MODEL_PATH = PROJECT_ROOT / "models" / "yolo" / "yolo11x-pose.pt"
 DB_PATH = PROJECT_ROOT / "data" / "cows.db"
 IMAGES_DIR = PROJECT_ROOT / "data" / "registered_cows"
-XGB_MODEL_PATH = PROJECT_ROOT / "models" / "xgboost_cow_id.pkl"
-XGB_ENCODER_PATH = PROJECT_ROOT / "models" / "xgb_label_encoder.pkl"
-XGB_IMPUTER_PATH = PROJECT_ROOT / "models" / "xgb_imputer.pkl"
-XGB_FEATURES_PATH = PROJECT_ROOT / "models" / "xgb_feature_columns.json"
-XGB_THRESHOLD_PATH = PROJECT_ROOT / "models" / "xgb_unknown_threshold.json"
+XGB_MODEL_PATH = PROJECT_ROOT / "models" / "xgboost" / "xgboost_cow_id.pkl"
+XGB_ENCODER_PATH = PROJECT_ROOT / "models" / "xgboost" / "xgb_label_encoder.pkl"
+XGB_IMPUTER_PATH = PROJECT_ROOT / "models" / "xgboost" / "xgb_imputer.pkl"
+XGB_FEATURES_PATH = PROJECT_ROOT / "models" / "xgboost" / "xgb_feature_columns.json"
+XGB_THRESHOLD_PATH = PROJECT_ROOT / "models" / "xgboost" / "xgb_unknown_threshold.json"
 
 
 def _now_iso() -> str:
@@ -184,14 +185,7 @@ class CowFeatureExtractor:
         if keypoints.shape[0] > required_kpts:
             keypoints = keypoints[:required_kpts]
 
-        keypoint_map = {KEYPOINT_MAP[i]: keypoints[i] for i in range(required_kpts)}
-
-        features: dict[str, float] = {}
-        for p1, p2 in DISTANCE_PAIRS:
-            features[f"dist_{p1}_{p2}"] = float(calculate_distance(keypoint_map[p1], keypoint_map[p2]))
-
-        for p1, p2, p3 in ANGLE_TRIPLETS:
-            features[f"angle_{p1}_{p2}_{p3}"] = float(calculate_angle(keypoint_map[p1], keypoint_map[p2], keypoint_map[p3]))
+        features = build_feature_dict(keypoints)
 
         return keypoints, features
 
@@ -216,6 +210,8 @@ class ClassifyResponse(BaseModel):
     confidence: float | None
     threshold: float
     reason: str | None = None
+    keypoints: list[list[float]] | None = None
+    keypoint_names: list[str] | None = None
 
 
 app = FastAPI(title="Cow Classifier API", version="1.0.0")
@@ -394,6 +390,7 @@ async def identify_cow(
 async def classify_cow(
     image: UploadFile = File(...),
     confidence_threshold: float | None = Query(default=None, ge=0.0, le=1.0),
+    include_keypoints: bool = Query(default=False),
 ) -> ClassifyResponse:
     if extractor is None:
         raise HTTPException(status_code=500, detail="Extrator de features não inicializado.")
@@ -407,7 +404,7 @@ async def classify_cow(
     image_bgr, _ = _validate_image(image, raw_bytes)
 
     try:
-        _, features = extractor.extract_from_image_array(image_bgr)
+        keypoints, features = extractor.extract_from_image_array(image_bgr)
     except ValueError as exc:
         reason = "no_keypoints_detected"
         if "Detecção parcial" in str(exc):
@@ -418,6 +415,8 @@ async def classify_cow(
             confidence=None,
             threshold=effective_threshold,
             reason=reason,
+            keypoints=None,
+            keypoint_names=None,
         )
 
     vector = _xgb_vector_from_features(features, xgb_feature_columns).reshape(1, -1)
@@ -437,6 +436,8 @@ async def classify_cow(
         confidence=round(best_confidence, 6),
         threshold=effective_threshold,
         reason=reason,
+        keypoints=_to_jsonable_keypoints(keypoints) if include_keypoints else None,
+        keypoint_names=[KEYPOINT_MAP[i] for i in range(len(KEYPOINT_MAP))] if include_keypoints else None,
     )
 
 
