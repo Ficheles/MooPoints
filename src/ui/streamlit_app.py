@@ -1,4 +1,5 @@
 import io
+import os
 from pathlib import Path
 from typing import Any
 
@@ -108,7 +109,9 @@ def api_get_reference_image(base_url: str, cow_id: int, timeout: int = 30) -> tu
 
 def sidebar_settings() -> tuple[str, float, int, bool, bool]:
     st.sidebar.title("⚙️ Configurações")
-    base_url = st.sidebar.text_input("URL da API", value="http://localhost:8000").rstrip("/")
+    # Usar variável de ambiente ou localhost como fallback
+    default_api_url = os.getenv("API_URL", "http://localhost:8000")
+    base_url = st.sidebar.text_input("URL da API", value=default_api_url).rstrip("/")
     threshold = st.sidebar.slider("Limiar de similaridade", min_value=0.20, max_value=0.999, value=0.80, step=0.005)
     timeout = st.sidebar.slider("Timeout (segundos)", min_value=10, max_value=180, value=60, step=5)
     show_keypoints = st.sidebar.checkbox("Exibir keypoints na imagem", value=False)
