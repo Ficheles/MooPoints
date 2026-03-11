@@ -7,6 +7,11 @@ Projeto de identificação/classificação de vacas com pipeline de visão compu
 - **XGBoost** para classificar entre classes conhecidas;
 - **FastAPI + Streamlit** para uso via API e interface web.
 
+## 🚀 Demonstração Online
+
+Experimente o sistema gratuitamente no Hugging Face Spaces:
+**[🐮 Cow Classifier - Demo](https://huggingface.co/spaces/ronenfilho/cow-classifier)**
+
 ## Comece por aqui
 
 ### Pré-requisitos
@@ -88,6 +93,37 @@ python -m src.classification.extract_geometric_features \
 python -m src.classification.train_xgboost_classifier \
   --features-csv data/datasets/classifications/geometric_features.csv \
   --models-dir models/xgboost
+```
+
+## 📦 Deploy no Hugging Face Spaces
+
+O projeto está configurado para deploy automático no HF Spaces usando Docker.
+
+### Arquivos de Deploy
+
+- `app.py` - Entrypoint que inicia API (porta 8000) + Streamlit (porta 7860)
+- `deploy_hf.sh` - Script de deploy automatizado
+- `.env.example` - Template de configuração
+
+### Deploy Manual
+
+1. Crie um Space no Hugging Face com SDK Docker
+2. Configure as credenciais:
+```bash
+cp .env.example .env
+# Edite .env com suas credenciais HF
+```
+
+3. Execute o script de deploy:
+```bash
+./deploy_hf.sh
+```
+
+### Ou via CLI:
+
+```bash
+git remote add hf https://huggingface.co/spaces/SEU_USERNAME/SEU_SPACE
+git push hf main
 ```
 
 ## Documentação detalhada

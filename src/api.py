@@ -22,6 +22,7 @@ import cv2
 import joblib
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from ultralytics import YOLO
@@ -237,6 +238,16 @@ class ClassifyResponse(BaseModel):
 
 
 app = FastAPI(title="Cow Classifier API", version="1.0.0")
+
+# Configurar CORS para permitir requisições do Streamlit
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # No HF Spaces, permitir todas as origens
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 extractor: CowFeatureExtractor | None = None
 xgb_model = None
 xgb_encoder = None

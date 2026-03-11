@@ -6,4 +6,7 @@ __pycache__
 *.log
 dataset
 fotos_anotadas
-models
+data/datasets
+data/registered_cows
+dataset_samples
+docs
